@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>NovelRAG</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../NovelRAG.Infrastructure/NovelRAG.Infrastructure.csproj" />
+    <ProjectReference Include="../NovelRAG.Retrieval/NovelRAG.Retrieval.csproj" />
+    <ProjectReference Include="../NovelRAG.AI.Ollama/NovelRAG.AI.Ollama.csproj" />
+  </ItemGroup>
+</Project>

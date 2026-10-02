@@ -1,0 +1,3 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup><ProjectReference Include="../NovelRAG.Application/NovelRAG.Application.csproj" /><ProjectReference Include="../NovelRAG.Infrastructure/NovelRAG.Infrastructure.csproj" /></ItemGroup>
+</Project>

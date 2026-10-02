@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/NovelRAG.Infrastructure/NovelRAG.Infrastructure.csproj" />
+    <ProjectReference Include="../../src/NovelRAG.Retrieval/NovelRAG.Retrieval.csproj" />
+    <ProjectReference Include="../../src/NovelRAG.AI.Ollama/NovelRAG.AI.Ollama.csproj" />
+  </ItemGroup>
+</Project>
