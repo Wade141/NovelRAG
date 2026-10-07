@@ -2,6 +2,7 @@ using Microsoft.Win32;
 using NovelRAG.Infrastructure;
 using System.Windows.Automation;
 using System.Windows.Data;
+using System.Globalization;
 
 namespace NovelRAG.Desktop;
 
@@ -21,6 +22,8 @@ public sealed class SettingsWindow : Window
     private CancellationTokenSource? operation;
     private bool busy;
     private readonly Button cancelOperation;
+    private readonly Dictionary<string, TextBox> retrievalFields = new();
+    private readonly TextBlock retrievalStatus = Ui.Text("", 12, Ui.Muted);
     public SettingsWindow(AppServices services, DesktopController controller)
     {
         this.services = services; this.controller = controller; preparation = new(services); Ui.Configure(this, "设置", 760, 850);
@@ -42,7 +45,7 @@ public sealed class SettingsWindow : Window
         var prepare = Ui.Button("一键准备 AI", () => controller.StartAiPreparationAsync(), true); AutomationProperties.SetAutomationId(prepare, "PrepareAi");
         prepare.SetBinding(ContentControl.ContentProperty, new Binding(nameof(preparation.StartLabel)) { Source = preparation });
         prepare.SetBinding(IsEnabledProperty, new Binding(nameof(preparation.CanStart)) { Source = preparation });
-        var pause = Ui.Button("暂停", () => services.Preparation.PauseAsync()); pause.SetBinding(IsEnabledProperty, new Binding(nameof(preparation.Working)) { Source = preparation });
+        var pause = Ui.Button("暂停", () => services.Preparation.PauseAsync()); pause.SetBinding(IsEnabledProperty, new Binding(nameof(preparation.CanPause)) { Source = preparation });
         pause.SetBinding(VisibilityProperty, new Binding(nameof(preparation.ProgressVisibility)) { Source = preparation });
         var tryAi = Ui.Button("去试一试", () => { controller.OpenChat(); return Task.CompletedTask; });
         tryAi.SetBinding(VisibilityProperty, new Binding(nameof(preparation.TryVisibility)) { Source = preparation });
@@ -64,15 +67,30 @@ public sealed class SettingsWindow : Window
         advanced.Children.Add(Ui.Button("重建语义索引", () => RunAsync(RebuildAsync))); advanced.Children.Add(BoundText(nameof(preparation.Details)));
         localAi.Children.Add(new Expander { Header = "高级设置与诊断", Content = advanced, IsExpanded = false, Margin = new Thickness(0, 12, 0, 4) });
         panel.Children.Add(Ui.Card(localAi));
+        var retrievalPanel = new StackPanel();
+        retrievalPanel.Children.Add(Ui.Text("混合检索按语义、关键词和元数据权重排序，权重会自动归一化。元数据匹配问题中的作品或完整标签名。", 12, Ui.Muted));
+        foreach (var (key, label) in new[] { ("VectorWeight", "语义权重"), ("FtsWeight", "关键词权重"), ("MetadataWeight", "元数据权重"), ("RrfK", "排名平滑参数（大于 0）"), ("MinSimilarity", "最低语义相似度（0–1）"), ("SearchTopK", "搜索结果条数（1–100）"), ("RagTopK", "问答来源数（1–20，不超过搜索条数）") })
+        {
+            var input = Ui.Input("Retrieval" + key); input.Width = 100; input.ToolTip = "数值使用小数点，例如 0.5";
+            retrievalFields[key] = input;
+            var row = new DockPanel(); DockPanel.SetDock(input, Dock.Right); row.Children.Add(input); row.Children.Add(Ui.Text(label, 13)); retrievalPanel.Children.Add(row);
+        }
+        FillRetrieval(s.Retrieval);
+        retrievalPanel.Children.Add(Ui.Row(Ui.Button("保存检索参数", () => RunAsync(SaveRetrievalAsync, cancellable: false)), Ui.Button("恢复默认检索参数", () => { FillRetrieval(new()); retrievalStatus.Text = "已恢复默认值，点击保存后生效。"; return Task.CompletedTask; })));
+        AutomationProperties.SetAutomationId(retrievalStatus, "RetrievalStatus"); retrievalPanel.Children.Add(retrievalStatus);
+        var retrievalExpander = new Expander { Header = "检索参数（高级）", Content = retrievalPanel, Margin = new Thickness(0, 12, 0, 4) };
+        AutomationProperties.SetAutomationId(retrievalExpander, "RetrievalOptionsExpander"); panel.Children.Add(retrievalExpander);
         panel.Children.Add(Ui.Text("桌宠", 19)); panel.Children.Add(Ui.Row(visible, snap)); panel.Children.Add(Ui.Text("缩放 · 0.6–2 倍", 12, Ui.Muted)); panel.Children.Add(scale);
         panel.Children.Add(Ui.Button("保存桌宠设置", () => RunAsync(SaveAsync)));
         var dataPanel = new StackPanel();
+        var repairKeyword = Ui.Button("修复关键词索引", () => RunAsync(RepairKeywordAsync));
+        AutomationProperties.SetAutomationId(repairKeyword, "RepairKeywordIndex"); dataPanel.Children.Add(repairKeyword);
         var location = Ui.Input("DatabasePath"); location.Text = services.Data.DatabasePath; location.IsReadOnly = true; dataPanel.Children.Add(location);
         dataPanel.Children.Add(Ui.Row(Ui.Button("导出 JSON", () => RunAsync(() => ExportAsync(false))), Ui.Button("导出 Markdown", () => RunAsync(() => ExportAsync(true)))));
         dataPanel.Children.Add(Ui.Row(Ui.Button("备份数据库", () => RunAsync(BackupAsync)), Ui.Button("从备份恢复…", () => RunAsync(RestoreAsync))));
         dataPanel.Children.Add(Ui.Text("导出包含归档记录。恢复前会校验备份并保存一份当前数据库副本。", 12, Ui.Muted));
         panel.Children.Add(new Expander { Header = "数据与备份", Content = dataPanel, Margin = new Thickness(0, 12, 0, 0) });
-        panel.Children.Add(status);
+        AutomationProperties.SetAutomationId(status, "SettingsStatus"); panel.Children.Add(status);
         var outer = new DockPanel();
         cancelOperation = Ui.Button("取消当前索引 / 操作", () => { operation?.Cancel(); return Task.CompletedTask; }); cancelOperation.Visibility = Visibility.Collapsed; cancelOperation.Margin = new Thickness(26, 4, 26, 14); DockPanel.SetDock(cancelOperation, Dock.Bottom); outer.Children.Add(cancelOperation);
         outer.Children.Add(new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }); Content = outer;
@@ -91,6 +109,22 @@ public sealed class SettingsWindow : Window
             status.Text = "保存位置：" + target + "\n请点击“一键准备 AI”。旧目录保留，原有灵感不受影响。";
             await preparation.RefreshEstimateAsync();
         }, cancellable: false);
+    }
+    private void FillRetrieval(RetrievalOptions value)
+    {
+        var values = new Dictionary<string, double> { ["VectorWeight"] = value.VectorWeight, ["FtsWeight"] = value.FtsWeight, ["MetadataWeight"] = value.MetadataWeight, ["RrfK"] = value.RrfK, ["MinSimilarity"] = value.MinSimilarity, ["SearchTopK"] = value.SearchTopK, ["RagTopK"] = value.RagTopK };
+        foreach (var (key, number) in values) retrievalFields[key].Text = number.ToString(CultureInfo.InvariantCulture);
+    }
+    private async Task SaveRetrievalAsync()
+    {
+        double Number(string key) => double.TryParse(retrievalFields[key].Text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var value) ? value : throw new ArgumentException("请输入有效数值，小数使用小数点。");
+        int Integer(string key) => int.TryParse(retrievalFields[key].Text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) ? value : throw new ArgumentException("结果条数和来源数必须为整数。");
+        try
+        {
+            var options = new RetrievalOptions { VectorWeight = Number("VectorWeight"), FtsWeight = Number("FtsWeight"), MetadataWeight = Number("MetadataWeight"), RrfK = Number("RrfK"), MinSimilarity = Number("MinSimilarity"), SearchTopK = Integer("SearchTopK"), RagTopK = Integer("RagTopK") };
+            options.Validate(); await services.UpdateSettingsAsync(s => s with { Retrieval = options }); retrievalStatus.Text = "检索参数已保存，下次查询生效。";
+        }
+        catch (ArgumentException ex) { retrievalStatus.Text = ex.Message; }
     }
     private async Task UseExternalAsync()
     {
@@ -123,14 +157,25 @@ public sealed class SettingsWindow : Window
     private async Task RebuildAsync()
     {
         if (services.Preparation.IsRunning || !services.Preparation.Status.SearchReady) throw new InvalidOperationException("请先完成智能搜索准备。");
-        await services.Preparation.SuspendAsync(); await controller.Worker.StopAsync();
+        await controller.SuspendMonitoringAsync(); await services.Preparation.SuspendAsync(); await controller.Worker.StopAsync();
         try
         {
             var result = await services.Indexer.RebuildAsync(new Progress<IndexProgress>(p => status.Text = $"正在建立索引 {p.Completed}/{p.Total} · 失败 {p.Failed}"), operation!.Token);
             status.Text = $"索引处理完成：{result.Completed}/{result.Total}，失败 {result.Failed}。";
             services.Preparation.UpdateIndex(result);
         }
-        finally { services.Preparation.ReleaseMaintenance(); controller.Worker.Start(); }
+        finally { services.Preparation.ReleaseMaintenance(); controller.ResumeMonitoring(); controller.Worker.Start(); }
+    }
+    private async Task RepairKeywordAsync()
+    {
+        if (!await controller.PrepareRestoreAsync()) { status.Text = "维护未开始；请先处理未保存的修改。"; return; }
+        try
+        {
+            status.Text = "正在修复关键词索引…";
+            await services.Maintenance.RebuildKeywordIndexAsync(operation!.Token);
+            status.Text = "关键词索引已修复并校验，原始灵感未修改。";
+        }
+        finally { controller.FinishRestore(); }
     }
     private string? SavePath(string extension, string filter)
     {

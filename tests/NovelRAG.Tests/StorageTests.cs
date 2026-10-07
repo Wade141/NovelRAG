@@ -1,3 +1,5 @@
+using Microsoft.Data.Sqlite;
+using NovelRAG.Application;
 using NovelRAG.Domain;
 using NovelRAG.Infrastructure;
 using Xunit;
@@ -70,6 +72,44 @@ public sealed class StorageTests : IDisposable
         Assert.Single(await db.SearchAsync(new("heroine", p.Id)));
         Assert.Single(await db.ListAsync(new(UncategorizedOnly: true)));
         Assert.Empty(await db.ListAsync(new(From: DateTimeOffset.UtcNow.AddDays(1))));
+    }
+    [Fact]
+    public async Task Local_date_bounds_combine_with_project_tags_archive_and_paging()
+    {
+        var db = await Open();
+        var project = await db.SaveProjectAsync("日期筛选测试");
+        var other = await db.SaveProjectAsync("其他作品");
+        async Task<Idea> Add(string timestamp, long? projectId, string[] tags, bool archived = false)
+        {
+            var idea = await db.SaveAsync(new("铜铃相关记忆", projectId, tags));
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = db.DatabasePath, Pooling = false }.ToString());
+            await connection.OpenAsync();
+            using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE Ideas SET CreatedAt=$at WHERE Id=$id";
+            command.Parameters.AddWithValue("$at", DateTimeOffset.Parse(timestamp, System.Globalization.CultureInfo.InvariantCulture).ToUniversalTime().ToString("O"));
+            command.Parameters.AddWithValue("$id", idea.Id);
+            await command.ExecuteNonQueryAsync();
+            if (archived) await db.ArchiveAsync(idea.Id, true);
+            return idea;
+        }
+        var before = await Add("2026-10-06T15:59:59Z", project.Id, ["人物", "伏笔"]);
+        var first = await Add("2026-10-06T16:00:00Z", project.Id, ["人物", "伏笔"]);
+        var last = await Add("2026-10-07T15:59:59.9999999Z", project.Id, ["人物", "伏笔"]);
+        var after = await Add("2026-10-07T16:00:00Z", project.Id, ["人物", "伏笔"]);
+        var archived = await Add("2026-10-07T08:00:00Z", project.Id, ["人物", "伏笔"], true);
+        await Add("2026-10-07T08:00:00Z", other.Id, ["人物", "伏笔"]);
+        await Add("2026-10-07T08:00:00Z", project.Id, ["人物"]);
+        var uncategorized = await Add("2026-10-07T08:00:00Z", null, ["人物", "伏笔"]);
+        var zone = TimeZoneInfo.CreateCustomTimeZone("Test UTC+8", TimeSpan.FromHours(8), "UTC+8", "UTC+8");
+        var range = DateRangeFilter.ToUtcBounds(new(2026, 10, 7), new(2026, 10, 7), zone);
+        var query = new RetrievalQuery("铜铃", project.Id, first.Tags.Select(t => t.Id).ToArray(), From: range.From, To: range.To);
+        Assert.Equal(new[] { last.Id, first.Id }, (await db.ListAsync(query)).Select(i => i.Id));
+        Assert.Equal(new[] { last.Id, first.Id }, (await db.SearchAsync(query)).Select(r => r.Idea.Id));
+        Assert.Equal(first.Id, Assert.Single(await db.SearchAsync(query with { Limit = 1, Offset = 1 })).Idea.Id);
+        Assert.Contains(await db.SearchAsync(query with { IncludeArchived = true }), r => r.Idea.Id == archived.Id);
+        Assert.Equal(uncategorized.Id, Assert.Single(await db.ListAsync(query with { ProjectId = null, UncategorizedOnly = true })).Id);
+        Assert.Contains(await db.ListAsync(query with { From = null }), i => i.Id == before.Id);
+        Assert.Contains(await db.ListAsync(query with { To = null }), i => i.Id == after.Id);
     }
     [Fact]
     public async Task KeywordExcerptContainsEvidenceNearEndOfLongIdea()

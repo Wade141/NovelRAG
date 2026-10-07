@@ -1,4 +1,5 @@
 using System.Windows.Input;
+using System.Windows.Automation;
 
 namespace NovelRAG.Desktop;
 
@@ -9,6 +10,7 @@ public sealed class LibraryWindow : Window
     private readonly ComboBox projects = new() { DisplayMemberPath = "Name", SelectedValuePath = "Id", Padding = new Thickness(8) };
     private readonly ListBox tags = new() { DisplayMemberPath = "Name", SelectionMode = SelectionMode.Multiple, MinHeight = 110, MaxHeight = 300 };
     private readonly TextBox query = Ui.Input("LibrarySearch");
+    private readonly DateRangeControl dates = new();
     private readonly CheckBox archived = new() { Content = "包含归档", Margin = new Thickness(4, 10, 12, 4) };
     private readonly ListBox list = new() { DisplayMemberPath = "Preview", BorderThickness = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Stretch };
     private readonly IdeaEditor editor = new();
@@ -17,7 +19,9 @@ public sealed class LibraryWindow : Window
     private readonly TaskCompletionSource ready = new();
     private readonly Grid root = new() { Margin = new Thickness(22) };
     private Idea? selected;
+    private RetrievalQuery? lastAppliedQuery;
     private bool selectionGuard, busy;
+    private bool filtersChanged = true;
     private int offset;
     public LibraryWindow(AppServices services, DesktopController controller)
     {
@@ -34,7 +38,7 @@ public sealed class LibraryWindow : Window
         side.Children.Add(archived); side.Children.Add(Ui.Button("应用筛选 / 刷新", () => RefreshRequested(true), true));
         side.Children.Add(Ui.Text("移除作品后，灵感会保留在“未分类”。归档内容默认不参与搜索。", 12, Ui.Muted)); body.Children.Add(side);
         var center = new DockPanel { Margin = new Thickness(0, 0, 16, 0) }; Grid.SetColumn(center, 1); body.Children.Add(Ui.Card(center)); Grid.SetColumn(body.Children[^1], 1);
-        var search = new StackPanel(); search.Children.Add(Ui.Text("关键词检索", 17)); search.Children.Add(query); search.Children.Add(Ui.Button("搜索", () => RefreshRequested(true)));
+        var search = new StackPanel(); search.Children.Add(Ui.Text("关键词检索", 17)); search.Children.Add(query); search.Children.Add(dates); search.Children.Add(Ui.Button("搜索", () => RefreshRequested(true)));
         DockPanel.SetDock(search, Dock.Top); center.Children.Add(search);
         var pager = new StackPanel(); pager.Children.Add(status); pager.Children.Add(Ui.Row(Ui.Button("上一页", () => Page(-50)), Ui.Button("下一页", () => Page(50)))); DockPanel.SetDock(pager, Dock.Bottom); center.Children.Add(pager); center.Children.Add(list);
         var detail = new DockPanel(); var detailCard = Ui.Card(detail); Grid.SetColumn(detailCard, 2); body.Children.Add(detailCard);
@@ -43,6 +47,10 @@ public sealed class LibraryWindow : Window
         foreach (var b in new[] { Ui.Button("保存修改", () => RunAsync(SaveAsync), true), Ui.Button("归档 / 取消归档", () => RunAsync(ArchiveAsync)), Ui.Button("永久删除…", () => RunAsync(DeleteAsync)) }) detailButtons.Children.Add(b);
         DockPanel.SetDock(detailButtons, Dock.Bottom); detail.Children.Add(detailButtons); detail.Children.Add(editor); editor.IsEnabled = false;
         Content = root;
+        AutomationProperties.SetAutomationId(list, "LibraryResults"); AutomationProperties.SetAutomationId(status, "LibraryStatus");
+        query.TextChanged += (_, _) => filtersChanged = true; projects.SelectionChanged += (_, _) => filtersChanged = true;
+        tags.SelectionChanged += (_, _) => filtersChanged = true; archived.Checked += (_, _) => filtersChanged = true; archived.Unchecked += (_, _) => filtersChanged = true;
+        dates.Changed += () => filtersChanged = true;
         Loaded += async (_, _) => { try { await RunAsync(async () => { await LoadFilters(); await RefreshAsync(); }); ready.TrySetResult(); } catch (Exception ex) { ready.TrySetException(ex); Ui.Error(ex); } };
         list.SelectionChanged += async (_, _) =>
         {
@@ -66,23 +74,35 @@ public sealed class LibraryWindow : Window
         projects.SelectedValue = projectId ?? -1L; if (projects.SelectedIndex < 0) projects.SelectedIndex = 0;
         tags.ItemsSource = await services.Tags.ListAsync(); foreach (Tag tag in tags.Items) if (selectedTags.Contains(tag.Id)) tags.SelectedItems.Add(tag);
     }
-    private RetrievalQuery Query()
+    private RetrievalQuery? Query()
     {
+        if (!dates.TryGetUtcBounds(out var from, out var to)) return null;
         var p = projects.SelectedValue is long id ? id : -1;
-        return new(query.Text, p > 0 ? p : null, tags.SelectedItems.Cast<Tag>().Select(t => t.Id).ToArray(), archived.IsChecked == true, p == 0, Limit: 50, Offset: offset);
+        return new(query.Text, p > 0 ? p : null, tags.SelectedItems.Cast<Tag>().Select(t => t.Id).ToArray(), archived.IsChecked == true, p == 0, From: from, To: to, Limit: 50, Offset: offset);
     }
     private async Task RefreshRequested(bool reset)
     {
-        if (!DiscardChanges()) return;
+        if (!dates.TryGetUtcBounds(out _, out _) || !DiscardChanges()) return;
         await RunAsync(async () => { if (reset) offset = 0; await LoadFilters(); await RefreshAsync(); });
     }
-    private async Task Page(int delta) { if (!DiscardChanges()) return; await RunAsync(async () => { offset = Math.Max(0, offset + delta); await RefreshAsync(); }); }
-    private async Task RefreshAsync()
+    private async Task Page(int delta) { if (!dates.TryGetUtcBounds(out _, out _) || !DiscardChanges()) return; await RunAsync(async () => { offset = filtersChanged ? 0 : Math.Max(0, offset + delta); await RefreshAsync(); }); }
+    private async Task RefreshAsync(bool afterMutation = false)
     {
-        var results = await services.Search.SearchAsync(Query());
+        if (filtersChanged) offset = 0;
+        var snapshot = Query();
+        var validFilters = snapshot is not null;
+        if (snapshot is null)
+        {
+            if (!afterMutation || lastAppliedQuery is null) { status.Text = "日期无效，结果未更新"; return; }
+            // A completed write must reconcile the list/editor even when the pending filter is invalid.
+            snapshot = lastAppliedQuery with { Offset = offset };
+        }
+        var results = await services.Search.SearchAsync(snapshot);
+        lastAppliedQuery = snapshot; filtersChanged = !validFilters;
         selectionGuard = true; list.ItemsSource = results.Results.Select(r => r.Idea).ToArray(); list.SelectedIndex = -1; selectionGuard = false;
         selected = null; await editor.LoadAsync(services); editor.IsEnabled = false; metadata.Text = "选择一条灵感查看与编辑";
         status.Text = results.Results.Count == 0 ? "没有匹配记录" : $"第 {offset / 50 + 1} 页 · {results.Results.Count} 条";
+        if (!validFilters) status.Text += " · 已按上次有效条件更新";
     }
     private async Task SelectAsync(Idea idea)
     {
@@ -104,17 +124,17 @@ public sealed class LibraryWindow : Window
     {
         if (selected is null) return;
         selected = await services.Ideas.SaveAsync(editor.Draft(), selected.Id); editor.MarkClean(); var id = selected.Id;
-        await LoadFilters(); await RefreshAsync(); await SelectAsync((await services.Ideas.GetAsync(id))!); status.Text = "修改已保存";
+        await LoadFilters(); await RefreshAsync(afterMutation: true); await SelectAsync((await services.Ideas.GetAsync(id))!); status.Text = "修改已保存";
     }
     private async Task ArchiveAsync()
     {
         if (selected is null || !DiscardChanges()) return;
-        await services.Ideas.ArchiveAsync(selected.Id, !selected.Archived); await RefreshAsync();
+        await services.Ideas.ArchiveAsync(selected.Id, !selected.Archived); await RefreshAsync(afterMutation: true);
     }
     private async Task DeleteAsync()
     {
         if (selected is null || !Ui.Confirm("永久删除此灵感？此操作无法撤销。建议优先使用归档。")) return;
-        await services.Ideas.DeleteAsync(selected.Id); editor.MarkClean(); await RefreshAsync();
+        await services.Ideas.DeleteAsync(selected.Id); editor.MarkClean(); await RefreshAsync(afterMutation: true);
     }
     private Task ProjectAction(string action) => RunAsync(async () =>
     {
@@ -123,7 +143,7 @@ public sealed class LibraryWindow : Window
         if (action != "new" && (item is null || item.Id <= 0)) throw new ArgumentException("请先选择一个具体作品。");
         if (action == "delete") { if (!Ui.Confirm("移除该作品？其中灵感将保留在“未分类”。")) return; await services.Projects.DeleteAsync(item!.Id); }
         else { var name = Ui.Prompt(this, action == "new" ? "新建作品" : "作品改名", action == "new" ? "" : item!.Name); if (name is null) return; await services.Projects.SaveAsync(name, action == "new" ? null : item!.Id); }
-        await LoadFilters(); await RefreshAsync();
+        await LoadFilters(); await RefreshAsync(afterMutation: true);
     });
     private Task TagAction(string action) => RunAsync(async () =>
     {
@@ -133,6 +153,6 @@ public sealed class LibraryWindow : Window
         var item = selectedTags.FirstOrDefault();
         if (action == "delete") { if (!Ui.Confirm("移除此标签及其关联？灵感内容将保留。")) return; await services.Tags.DeleteAsync(item!.Id); }
         else { var name = Ui.Prompt(this, action == "new" ? "新建标签" : "标签改名", action == "new" ? "" : item!.Name); if (name is null) return; await services.Tags.SaveAsync(name, action == "new" ? null : item!.Id); }
-        await LoadFilters(); await RefreshAsync();
+        await LoadFilters(); await RefreshAsync(afterMutation: true);
     });
 }

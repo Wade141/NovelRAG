@@ -62,7 +62,7 @@ public sealed partial class SqliteStore
     public Task<IReadOnlyList<EmbeddingRecord>> EmbeddingsAsync(string model, string digest, CancellationToken ct = default) => Run<IReadOnlyList<EmbeddingRecord>>(c =>
     {
         using var cmd = Command(c, """
-            SELECT e.IdeaId,e.Revision,e.Chunk,e.Text,e.Model,e.Digest,e.ChunkerVersion,e.Vector,e.Dimension
+            SELECT e.IdeaId,e.Revision,e.Chunk,e.Text,e.Model,e.Digest,e.ChunkerVersion,e.Vector,e.Dimension,e.CreatedAt
             FROM Embeddings e JOIN Ideas i ON i.Id=e.IdeaId AND i.Revision=e.Revision
             WHERE e.Model=$m AND e.Digest=$d
             """, ("$m", model), ("$d", digest));
@@ -72,7 +72,7 @@ public sealed partial class SqliteStore
             var bytes = (byte[])r[7]; var dimension = r.GetInt32(8);
             if (dimension <= 0 || bytes.Length != dimension * sizeof(float)) continue;
             var vector = new float[dimension]; Buffer.BlockCopy(bytes, 0, vector, 0, bytes.Length);
-            rows.Add(new(r.GetInt64(0), r.GetInt64(1), r.GetInt32(2), r.GetString(3), r.GetString(4), r.GetString(5), r.GetInt32(6), vector));
+            rows.Add(new(r.GetInt64(0), r.GetInt64(1), r.GetInt32(2), r.GetString(3), r.GetString(4), r.GetString(5), r.GetInt32(6), vector, ReadDate(r, 9)));
         }
         return rows;
     }, ct);
@@ -87,9 +87,9 @@ public sealed partial class SqliteStore
         foreach (var e in embeddings)
         {
             var bytes = new byte[e.Vector.Length * sizeof(float)]; Buffer.BlockCopy(e.Vector, 0, bytes, 0, bytes.Length);
-            Execute(c, "INSERT INTO Embeddings VALUES($id,$r,$c,$t,$m,$d,$dim,$v,$blob)",
+            Execute(c, "INSERT INTO Embeddings(IdeaId,Revision,Chunk,Text,Model,Digest,Dimension,ChunkerVersion,Vector,CreatedAt) VALUES($id,$r,$c,$t,$m,$d,$dim,$v,$blob,$now)",
                 ("$id", ideaId), ("$r", revision), ("$c", e.Chunk), ("$t", e.Text), ("$m", e.Model), ("$d", e.Digest),
-                ("$dim", e.Vector.Length), ("$v", e.ChunkerVersion), ("$blob", bytes));
+                ("$dim", e.Vector.Length), ("$v", e.ChunkerVersion), ("$blob", bytes), ("$now", e.CreatedAt == default ? Now() : e.CreatedAt.ToUniversalTime().ToString("O")));
         }
         tx.Commit(); return true;
     }, ct);

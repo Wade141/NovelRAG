@@ -35,10 +35,15 @@ public interface IBackupStore
     Task BackupAsync(string path, CancellationToken ct = default);
     Task<string> RestoreAsync(string path, CancellationToken ct = default);
 }
+public interface IIndexMaintenance
+{
+    Task RebuildKeywordIndexAsync(CancellationToken ct = default);
+}
 public interface IEmbeddingProvider
 {
     Task<ModelIdentity> EmbeddingModelAsync(CancellationToken ct = default);
     Task<float[]> EmbedAsync(string text, CancellationToken ct = default);
+    Task<IReadOnlyList<float[]>> EmbedBatchAsync(IReadOnlyList<string> texts, CancellationToken ct = default) => EmbeddingBatch.SerialAsync(this, texts, ct);
 }
 public interface ILLMProvider
 {

@@ -22,6 +22,7 @@ public sealed class MarkdownExporter : IExporter
             {
                 output.AppendLine($"\n## {idea.CreatedAt:O} · #{idea.Id}{(idea.Archived ? " · 已归档" : "")}\n");
                 output.AppendLine("标签：" + string.Join(" ", idea.Tags.Select(t => "#" + t.Name)));
+                if (idea.Type is not null) output.AppendLine("类型：" + idea.Type);
                 output.AppendLine($"\n更新：{idea.UpdatedAt:O}\n\n{idea.Content}\n");
             }
         }

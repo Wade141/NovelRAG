@@ -3,6 +3,7 @@ using NovelRAG.Domain;
 using NovelRAG.Infrastructure;
 using NovelRAG.Retrieval;
 using Xunit;
+using Microsoft.Data.Sqlite;
 
 namespace NovelRAG.Tests;
 
@@ -74,6 +75,40 @@ public sealed class RetrievalTests
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
+    [Fact]
+    public async Task Every_retriever_and_rag_context_respect_date_bounds()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "NovelRAG-date-retrieval-" + Guid.NewGuid());
+        try
+        {
+            var path = Path.Combine(root, "test.db"); var db = new SqliteStore(path); await db.InitializeAsync();
+            var allowed = await db.SaveAsync(new("childhood meeting inside", null, []));
+            var outside = await db.SaveAsync(new("childhood meeting outside", null, []));
+            await using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false }.ToString()))
+            {
+                await connection.OpenAsync(); await using var command = connection.CreateCommand();
+                command.CommandText = "UPDATE Ideas SET CreatedAt = CASE WHEN Id = $allowed THEN $inside ELSE $outside END";
+                command.Parameters.AddWithValue("$allowed", allowed.Id);
+                command.Parameters.AddWithValue("$inside", new DateTimeOffset(2026, 10, 7, 0, 0, 0, TimeSpan.Zero).ToString("O"));
+                command.Parameters.AddWithValue("$outside", new DateTimeOffset(2026, 10, 8, 0, 0, 0, TimeSpan.Zero).ToString("O"));
+                await command.ExecuteNonQueryAsync();
+            }
+            var provider = new FakeEmbedding(); await new SemanticIndexer(db, db, provider).RebuildAsync();
+            var keyword = new FtsRetriever(db); var semantic = new VectorRetriever(db, db, provider); var hybrid = new HybridRetriever(keyword, semantic);
+            var query = new RetrievalQuery("childhood", From: new DateTimeOffset(2026, 10, 7, 0, 0, 0, TimeSpan.Zero), To: new DateTimeOffset(2026, 10, 8, 0, 0, 0, TimeSpan.Zero));
+            foreach (var retriever in new IRetriever[] { keyword, semantic, hybrid })
+            {
+                Assert.Equal(allowed.Id, Assert.Single((await retriever.RetrieveAsync(query)).Results).Idea.Id);
+                Assert.Equal(2, (await retriever.RetrieveAsync(query with { From = null, To = null })).Results.Count);
+            }
+            var model = new FakeLlm(new("childhood meeting", [allowed.Id]));
+            var answer = await new RagPipeline(hybrid, model).AskAsync(query);
+            Assert.False(answer.IsFallback); Assert.Equal(allowed.Id, Assert.Single(answer.Sources).Idea.Id);
+            Assert.Equal(allowed.Id, Assert.Single(model.Context).Idea.Id);
+            Assert.DoesNotContain(model.Context, r => r.Idea.Id == outside.Id);
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
     private sealed class FixedRetriever(IReadOnlyList<SearchResult> results, Exception? failure = null) : IRetriever
     {
         public Task<RetrievalResponse> RetrieveAsync(RetrievalQuery q, CancellationToken ct = default)
@@ -82,7 +117,8 @@ public sealed class RetrievalTests
     private sealed class FakeLlm(LlmAnswer answer) : ILLMProvider
     {
         public int Calls;
-        public Task<LlmAnswer> AnswerAsync(string q, IReadOnlyList<SearchResult> c, CancellationToken ct = default) { Calls++; return Task.FromResult(answer); }
+        public IReadOnlyList<SearchResult> Context = [];
+        public Task<LlmAnswer> AnswerAsync(string q, IReadOnlyList<SearchResult> c, CancellationToken ct = default) { Calls++; Context = c; return Task.FromResult(answer); }
     }
     private sealed class FakeEmbedding : IEmbeddingProvider
     {

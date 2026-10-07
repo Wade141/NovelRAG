@@ -2,7 +2,7 @@ using NovelRAG.Domain;
 
 namespace NovelRAG.Application;
 
-public enum AiStage { Idle, Checking, Engine, Search, Chat, Indexing, Ready, Partial, Paused, Failed, Disabled }
+public enum AiStage { Idle, Checking, Engine, Search, Chat, Indexing, Ready, Partial, Paused, Failed, Disabled, Recovering }
 public sealed record AiTransferProgress(string Message, long Completed = 0, long Total = 0, double BytesPerSecond = 0);
 public sealed record AiPreparationStatus(AiStage Stage, string Message, bool SearchReady = false, bool ChatReady = false,
     int Indexed = 0, int Pending = 0, int Failed = 0, AiTransferProgress? Transfer = null, string? Detail = null);
@@ -34,13 +34,13 @@ public sealed class AiPreparationService
     public event Action? Changed;
     public AiPreparationStatus Status { get { lock (gate) return status; } }
     public bool IsRunning { get { lock (gate) return active is { IsCompleted: false }; } }
-    public Task StartAsync(bool allowDownload = true)
+    public Task StartAsync(bool allowDownload = true, CancellationToken ct = default)
     {
         lock (gate)
         {
             if (suspended) return Task.FromException(new InvalidOperationException("正在维护资料库或退出，请稍后再准备 AI。"));
             if (active is { IsCompleted: false }) return active;
-            cancellation?.Dispose(); cancellation = new(); var token = cancellation.Token;
+            cancellation?.Dispose(); cancellation = CancellationTokenSource.CreateLinkedTokenSource(ct); var token = cancellation.Token;
             active = Task.Run(() => RunAsync(allowDownload, token)); return active;
         }
     }
@@ -74,6 +74,20 @@ public sealed class AiPreparationService
         if (state is not null) Set(new(state.Stage == AiStage.Disabled ? AiStage.Disabled : AiStage.Paused,
             state.Stage == AiStage.Disabled ? "AI 已关闭" : "可继续准备；已下载的组件会重新检查并复用"));
     }
+    public void RuntimeUnavailable(AiRuntimeFailure failure)
+    {
+        Set(Status with
+        {
+            Stage = failure.CanRecover ? AiStage.Recovering : AiStage.Failed,
+            SearchReady = false,
+            ChatReady = false,
+            Transfer = null,
+            Detail = null,
+            Message = failure.CanRecover ? "本地 AI 已中断，正在尝试自动恢复一次；记录与关键词搜索可用"
+                : failure.Managed ? "本地 AI 再次中断或恢复失败；请点击“检查与修复”，记录与关键词搜索可用"
+                : "已有本机 AI 服务不可用；请先恢复该服务，再点击“检查与修复”。记录与关键词搜索可用"
+        });
+    }
     public void UpdateIndex(IndexProgress progress)
     {
         lock (gate)
@@ -86,7 +100,8 @@ public sealed class AiPreparationService
                 Pending = pending,
                 Failed = progress.Failed,
                 Stage = status.ChatReady && pending == 0 ? AiStage.Ready : AiStage.Partial,
-                Message = pending == 0 ? "灵感整理完成" : $"仍有 {pending} 条灵感等待整理，可继续准备或修复"
+                Message = pending == 0 ? status.ChatReady ? "灵感整理完成，智能搜索与问答可用" : "灵感整理完成，智能搜索可用；问答暂不可用，可继续准备"
+                    : $"仍有 {pending} 条灵感等待整理，可继续准备或修复"
             };
         }
         Changed?.Invoke();

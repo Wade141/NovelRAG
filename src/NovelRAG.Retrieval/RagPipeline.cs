@@ -4,12 +4,13 @@ using System.Text.RegularExpressions;
 
 namespace NovelRAG.Retrieval;
 
-public sealed class RagPipeline(IRetriever retriever, ILLMProvider llm, IAppLog? log = null) : IChatPipeline
+public sealed class RagPipeline(IRetriever retriever, ILLMProvider llm, IAppLog? log = null, RetrievalOptions? options = null) : IChatPipeline
 {
     public async Task<ChatAnswer> AskAsync(RetrievalQuery query, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(query.Text)) throw new ArgumentException("请输入要查找的问题。");
-        var found = await retriever.RetrieveAsync(query with { Limit = 6, Offset = 0 }, ct);
+        var config = options ?? new(); config.Validate();
+        var found = await retriever.RetrieveAsync(query with { Limit = config.RagTopK, Offset = 0 }, ct);
         var context = found.Results.Select(r => r with { Excerpt = r.Excerpt.Length > 1000 ? r.Excerpt[..1000] : r.Excerpt }).ToArray();
         if (context.Length == 0) return new("没有找到足够的灵感记录来回答。可尝试更具体的关键词，或检查语义索引。" + (found.Warning is null ? "" : "\n" + found.Warning), [], true);
         try

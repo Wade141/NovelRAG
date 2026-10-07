@@ -60,13 +60,29 @@ public sealed class OllamaProvider(HttpClient client, Func<OllamaOptions> config
     }
     public async Task<float[]> EmbedAsync(string text, CancellationToken ct = default)
     {
+        return (await EmbedBatchAsync([text], ct))[0];
+    }
+    public async Task<IReadOnlyList<float[]>> EmbedBatchAsync(IReadOnlyList<string> texts, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (texts.Count == 0) return [];
+        var input = texts.ToArray();
+        if (input.Any(t => t is null)) throw new ArgumentException("嵌入文本不能为 null。", nameof(texts));
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct); timeout.CancelAfter(TimeSpan.FromMinutes(2));
-        var o = Options(); await LocalModel(o, o.EmbeddingModel, "embedding", timeout.Token);
-        using var response = await SendAsync(o, "/api/embed", new { model = o.EmbeddingModel, input = text, truncate = false, keep_alive = "5m" }, timeout.Token);
-        if (!response.RootElement.TryGetProperty("embeddings", out var vectors) || vectors.GetArrayLength() != 1) throw new InvalidDataException("嵌入响应格式不正确。");
-        var vector = vectors[0].EnumerateArray().Select(v => v.GetSingle()).ToArray();
-        if (vector.Length is 0 or > 65536 || vector.Any(v => !float.IsFinite(v)) || vector.All(v => v == 0)) throw new InvalidDataException("嵌入向量无效。");
-        return vector;
+        var o = Options(); var model = await LocalModel(o, o.EmbeddingModel, "embedding", timeout.Token);
+        var result = new List<float[]>(input.Length);
+        foreach (var batch in input.Chunk(EmbeddingBatch.MaxSize))
+        {
+            using var response = await SendAsync(o, "/api/embed", new { model = o.EmbeddingModel, input = batch, truncate = false, keep_alive = "5m" }, timeout.Token);
+            if (!response.RootElement.TryGetProperty("embeddings", out var vectors) || vectors.ValueKind != JsonValueKind.Array) throw new InvalidDataException("嵌入响应格式不正确。");
+            float[][] parsed;
+            try { parsed = vectors.EnumerateArray().Select(v => v.EnumerateArray().Select(n => n.GetSingle()).ToArray()).ToArray(); }
+            catch (Exception ex) when (ex is InvalidOperationException or FormatException or OverflowException) { throw new InvalidDataException("嵌入响应格式不正确。"); }
+            EmbeddingBatch.Validate(parsed, batch.Length, result.Count == 0 ? null : result[0].Length);
+            if (model != await LocalModel(o, o.EmbeddingModel, "embedding", timeout.Token)) throw new InvalidOperationException("模型已变更，请重新建立索引。");
+            result.AddRange(parsed);
+        }
+        timeout.Token.ThrowIfCancellationRequested(); return result;
     }
     public async Task<LlmAnswer> AnswerAsync(string question, IReadOnlyList<SearchResult> context, CancellationToken ct = default)
     {

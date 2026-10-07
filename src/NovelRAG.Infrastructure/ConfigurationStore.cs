@@ -1,10 +1,12 @@
 using System.Text.Json;
+using NovelRAG.Application;
 
 namespace NovelRAG.Infrastructure;
 
 public sealed record AppSettings
 {
     public int Version { get; init; } = 1;
+    public RetrievalOptions Retrieval { get; init; } = new();
     public bool PetVisible { get; init; } = true;
     public double PetScale { get; init; } = 1;
     public bool EdgeSnap { get; init; } = true;
@@ -22,6 +24,8 @@ public sealed record AppSettings
     public string ModelsPath { get; init; } = Environment.GetEnvironmentVariable("OLLAMA_MODELS") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ollama", "models");
     public void Validate()
     {
+        if (Retrieval is null) throw new ArgumentException("检索参数不能为空。");
+        Retrieval.Validate();
         if (Version != 1) throw new ArgumentException("设置版本不兼容。");
         if (AiDirectory is not null && (!Path.IsPathFullyQualified(AiDirectory) || AiDirectory.StartsWith("\\\\", StringComparison.Ordinal)))
             throw new ArgumentException("AI 组件需要保存在本机磁盘的完整路径中。");

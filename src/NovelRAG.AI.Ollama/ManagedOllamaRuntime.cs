@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Win32.SafeHandles;
+using NovelRAG.Application;
 
 namespace NovelRAG.AI.Ollama;
 
@@ -67,6 +68,19 @@ public sealed class ManagedOllamaRuntime : IDisposable
     {
         await gate.WaitAsync();
         try { StopCore(); } finally { gate.Release(); }
+    }
+    public async Task<AiRuntimeHealth> CheckAsync(HttpClient http, CancellationToken ct)
+    {
+        await gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (process is null || process.HasExited || Endpoint is null) return new(false, true);
+            var port = new Uri(Endpoint).Port;
+            if (!OwnsListener(port, process.Id)) return new(false, false);
+            using var response = await http.GetAsync(Endpoint + "/api/version", HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            return new(response.IsSuccessStatusCode && !process.HasExited && OwnsListener(port, process.Id), process.HasExited);
+        }
+        finally { gate.Release(); }
     }
     private void StopCore()
     {

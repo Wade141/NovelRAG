@@ -32,6 +32,8 @@ public sealed class AiPreparationTests
         Assert.True(service.Status.SearchReady);
         Assert.False(service.Status.ChatReady);
         Assert.Equal(2, service.Status.Indexed);
+        service.UpdateIndex(new(3, 3, 0));
+        Assert.Contains("问答暂不可用", service.Status.Message); Assert.Equal(AiStage.Partial, service.Status.Stage);
     }
 
     [Fact]
@@ -76,20 +78,21 @@ public sealed class AiPreparationTests
         public event Action? RuntimeInvalidated;
         public bool RestartDuringChat;
         private bool needsSearchCheck;
-        public bool HoldEngine, ChatFails, DownloadAllowed;
+        public bool HoldEngine, ChatFails, DownloadAllowed, Enabled;
+        public int EngineCalls, StopCalls;
         public IndexProgress Index = new(2, 2, 0);
         public TaskCompletionSource EngineEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task CheckAsync(bool allowDownload, IProgress<AiTransferProgress> progress, CancellationToken ct)
         { DownloadAllowed = allowDownload; return Task.CompletedTask; }
         public async Task PrepareEngineAsync(bool allowDownload, IProgress<AiTransferProgress> progress, CancellationToken ct)
-        { EngineEntered.TrySetResult(); if (HoldEngine) await Task.Delay(Timeout.Infinite, ct); }
+        { EngineCalls++; EngineEntered.TrySetResult(); if (HoldEngine) await Task.Delay(Timeout.Infinite, ct); }
         public Task PrepareSearchAsync(bool allowDownload, IProgress<AiTransferProgress> progress, CancellationToken ct) { needsSearchCheck = false; return Task.CompletedTask; }
         public Task PrepareChatAsync(bool allowDownload, IProgress<AiTransferProgress> progress, CancellationToken ct)
         { if (RestartDuringChat) { needsSearchCheck = true; RuntimeInvalidated?.Invoke(); } return ChatFails ? Task.FromException(new IOException("问答组件不可用")) : Task.CompletedTask; }
         public Task<IndexProgress> IndexAsync(IProgress<IndexProgress> progress, CancellationToken ct) => needsSearchCheck ? Task.FromException<IndexProgress>(new IOException("embedding not checked for this runtime")) : Task.FromResult(Index);
         public Task SaveStateAsync(AiPreparationStatus state, CancellationToken ct) => Task.CompletedTask;
-        public Task SetEnabledAsync(bool enabled, CancellationToken ct) => Task.CompletedTask;
-        public Task StopAsync() => Task.CompletedTask;
+        public Task SetEnabledAsync(bool enabled, CancellationToken ct) { ct.ThrowIfCancellationRequested(); Enabled = enabled; return Task.CompletedTask; }
+        public Task StopAsync() { StopCalls++; RuntimeInvalidated?.Invoke(); return Task.CompletedTask; }
     }
 
     [Fact]
@@ -99,6 +102,45 @@ public sealed class AiPreparationTests
         await service.StartAsync();
         Assert.Equal(AiStage.Ready, service.Status.Stage);
         Assert.True(service.Status.SearchReady && service.Status.ChatReady);
+    }
+    [Theory]
+    [InlineData("disable")]
+    [InlineData("shutdown")]
+    [InlineData("restore")]
+    [InlineData("directory")]
+    public async Task Lifecycle_boundary_cancels_inflight_recovery_before_stopping_or_maintenance(string action)
+    {
+        var backend = new Backend(); var preparation = new AiPreparationService(backend); await preparation.StartAsync(false);
+        backend.HoldEngine = true; backend.EngineEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var supervisor = new AiRuntimeSupervisor(new ExitedProbe(), () => true, () => true, async (failure, ct) =>
+        {
+            preparation.RuntimeUnavailable(failure); await preparation.StartAsync(false, ct); ct.ThrowIfCancellationRequested(); return preparation.Status.SearchReady;
+        }); supervisor.Activate(); var recovery = supervisor.CheckOnceAsync();
+        await backend.EngineEntered.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        Assert.False(preparation.Status.SearchReady || preparation.Status.ChatReady); Assert.False(backend.DownloadAllowed);
+        await supervisor.SuspendAsync();
+        if (action == "disable") await preparation.DisableAsync();
+        else if (action == "restore") await preparation.SuspendAsync();
+        else await preparation.ShutdownAsync();
+        await recovery; await supervisor.CheckOnceAsync(); Assert.Equal(2, backend.EngineCalls);
+        Assert.False(preparation.IsRunning); Assert.False(preparation.Status.SearchReady || preparation.Status.ChatReady);
+        if (action == "disable") Assert.False(backend.Enabled);
+        if (action != "disable") await Assert.ThrowsAsync<InvalidOperationException>(() => preparation.StartAsync(false));
+        if (action != "restore") Assert.Equal(1, backend.StopCalls);
+    }
+    private sealed class ExitedProbe : IAiRuntimeHealthProbe
+    {
+        public Task<AiRuntimeHealth> CheckAsync(CancellationToken ct) => Task.FromResult(new AiRuntimeHealth(false, true));
+    }
+    [Fact]
+    public async Task Runtime_failure_revokes_old_capabilities_and_recheck_can_restore_only_search()
+    {
+        var backend = new Backend(); var service = new AiPreparationService(backend); await service.StartAsync(false);
+        service.RuntimeUnavailable(new(true, true));
+        Assert.Equal(AiStage.Recovering, service.Status.Stage); Assert.False(service.Status.SearchReady || service.Status.ChatReady);
+        backend.ChatFails = true; await service.StartAsync(false);
+        Assert.True(service.Status.SearchReady); Assert.False(service.Status.ChatReady); Assert.Equal(AiStage.Partial, service.Status.Stage);
+        service.RuntimeUnavailable(new(true, false)); Assert.Contains("检查与修复", service.Status.Message);
     }
 
     [Theory]

@@ -12,7 +12,8 @@ public sealed class AiPreparationViewModel : INotifyPropertyChanged, IDisposable
     public AiPreflight? Estimate { get; private set; }
     public string EstimateText { get; private set; } = "正在检查电脑和所需空间…";
     public AiPreparationStatus State => services.Preparation.Status;
-    public bool Working => services.Preparation.IsRunning;
+    public bool Working => services.Preparation.IsRunning || State.Stage == AiStage.Recovering;
+    public bool CanPause => services.Preparation.IsRunning;
     public Visibility ProgressVisibility => Working ? Visibility.Visible : Visibility.Collapsed;
     public Visibility TransferVisibility => string.IsNullOrEmpty(TransferText) ? Visibility.Collapsed : Visibility.Visible;
     public Visibility TryVisibility => State.SearchReady ? Visibility.Visible : Visibility.Collapsed;
@@ -20,10 +21,10 @@ public sealed class AiPreparationViewModel : INotifyPropertyChanged, IDisposable
     public Visibility ChooseVisibility => CanChooseDirectory && Estimate?.CanPrepare != true ? Visibility.Visible : Visibility.Collapsed;
     public bool CanStart => !Working && Estimate?.Supported == true;
     public bool CanChooseDirectory => !Working;
-    public string DirectoryHint => Working ? "正在准备组件，请先暂停，再更换保存位置。" : "可选择其他磁盘；将在所选文件夹内创建专用子目录。更换后请在新位置准备 AI，旧目录会保留。";
+    public string DirectoryHint => State.Stage == AiStage.Recovering ? "正在恢复 AI；可关闭 AI 后更换保存位置。" : Working ? "正在准备组件，请先暂停，再更换保存位置。" : "可选择其他磁盘；将在所选文件夹内创建专用子目录。更换后请在新位置准备 AI，旧目录会保留。";
     public string StatusText => State.Message;
     public string Capabilities => $"智能搜索：{(State.SearchReady ? "可用" : "尚未就绪")}　　本地问答：{(State.ChatReady ? "可用" : "尚未就绪")}" + (State.Pending > 0 ? $"\n仍有 {State.Pending} 条灵感等待整理，失败 {State.Failed} 条" : "");
-    public string StartLabel => State.Stage switch { AiStage.Ready => "检查与修复", AiStage.Paused or AiStage.Partial or AiStage.Failed => "继续准备", _ => "一键准备 AI" };
+    public string StartLabel => State.Stage switch { AiStage.Ready or AiStage.Failed => "检查与修复", AiStage.Recovering => "正在自动恢复", AiStage.Paused or AiStage.Partial => "继续准备", _ => "一键准备 AI" };
     public string Details => State.Detail ?? "暂无错误。";
     public string TransferText => State.Transfer is not { } p ? "" : p.Message + (p.Total > 0 ? $"\n{Size(p.Completed)} / {Size(p.Total)}" + (p.BytesPerSecond > 0 ? $" · {Size((long)p.BytesPerSecond)}/秒" : "") : "");
     public bool Indeterminate => Working && State.Transfer?.Total is not > 0;

@@ -1,0 +1,435 @@
+{
+  "version": 1,
+  "synthetic": true,
+  "queries": [
+    {
+      "id": "q01",
+      "kind": "keyword",
+      "text": "裂口铜铃",
+      "relevant": [
+        "star-01"
+      ],
+      "irrelevant": [
+        "cloud-13",
+        "star-19"
+      ],
+      "filter": {
+        "projectId": "star"
+      }
+    },
+    {
+      "id": "q02",
+      "kind": "paraphrase",
+      "text": "男女主小时候在什么地方见面，后来靠什么认出彼此？",
+      "relevant": [
+        "star-01"
+      ],
+      "irrelevant": [
+        "mist-12",
+        "cloud-13"
+      ],
+      "filter": {
+        "projectId": "star"
+      }
+    },
+    {
+      "id": "q03",
+      "kind": "paraphrase",
+      "text": "林昭父亲打仗时秘密储存粮食的地方在哪里？",
+      "relevant": [
+        "star-02"
+      ],
+      "irrelevant": [
+        "star-03"
+      ],
+      "filter": {
+        "projectId": "star"
+      }
+    },
+    {
+      "id": "q04",
+      "kind": "keyword",
+      "text": "旧矿道",
+      "relevant": [
+        "star-03"
+      ],
+      "irrelevant": [
+        "mist-13"
+      ],
+      "filter": {
+        "tags": [
+          "交通"
+        ]
+      }
+    },
+    {
+      "id": "q05",
+      "kind": "relationship",
+      "text": "沈砚和太后是什么关系，他为什么隐藏身份？",
+      "relevant": [
+        "star-04"
+      ],
+      "irrelevant": [
+        "mist-01",
+        "cloud-01"
+      ],
+      "filter": {
+        "projectId": "star",
+        "tags": [
+          "人物"
+        ]
+      }
+    },
+    {
+      "id": "q06",
+      "kind": "relationship",
+      "text": "林昭的姐姐做什么，她在哪里救治伤员？",
+      "relevant": [
+        "star-05"
+      ],
+      "irrelevant": [
+        "star-18"
+      ],
+      "filter": {
+        "projectId": "star"
+      }
+    },
+    {
+      "id": "q07",
+      "kind": "keyword",
+      "text": "蓝杏",
+      "relevant": [
+        "star-13"
+      ],
+      "irrelevant": [
+        "mist-02"
+      ],
+      "filter": {
+        "projectId": "star"
+      }
+    },
+    {
+      "id": "q08",
+      "kind": "filters",
+      "text": "铜铃",
+      "relevant": [
+        "star-01"
+      ],
+      "irrelevant": [
+        "star-19",
+        "cloud-13"
+      ],
+      "filter": {
+        "projectId": "star",
+        "tags": [
+          "人物",
+          "伏笔"
+        ],
+        "from": "2026-01-01T00:00:00Z",
+        "to": "2026-01-02T00:00:00Z"
+      }
+    },
+    {
+      "id": "q09",
+      "kind": "filters",
+      "text": "旧稿 玉佩",
+      "relevant": [
+        "star-19"
+      ],
+      "irrelevant": [
+        "star-01"
+      ],
+      "filter": {
+        "projectId": "star",
+        "tags": [
+          "旧稿"
+        ],
+        "includeArchived": true
+      }
+    },
+    {
+      "id": "q10",
+      "kind": "paraphrase",
+      "text": "旧宫的秘密逃生出口如何开启？",
+      "relevant": [
+        "star-20"
+      ],
+      "irrelevant": [
+        "star-14"
+      ],
+      "filter": {
+        "projectId": "star",
+        "tags": [
+          "交通"
+        ]
+      }
+    },
+    {
+      "id": "q11",
+      "kind": "relationship",
+      "text": "雾港的沈砚是谁的儿子，他负责什么工作？",
+      "relevant": [
+        "mist-01"
+      ],
+      "irrelevant": [
+        "star-04",
+        "cloud-01"
+      ],
+      "filter": {
+        "projectId": "mist"
+      }
+    },
+    {
+      "id": "q12",
+      "kind": "keyword",
+      "text": "蓝色海藻",
+      "relevant": [
+        "mist-02"
+      ],
+      "irrelevant": [
+        "star-13"
+      ],
+      "filter": {
+        "projectId": "mist"
+      }
+    },
+    {
+      "id": "q13",
+      "kind": "relationship",
+      "text": "许弦和乔宁有什么血缘关系，用什么证明？",
+      "relevant": [
+        "mist-05"
+      ],
+      "irrelevant": [
+        "mist-19"
+      ],
+      "filter": {
+        "projectId": "mist"
+      }
+    },
+    {
+      "id": "q14",
+      "kind": "paraphrase",
+      "text": "灯塔连续三次短闪再一次长闪时，船应该往哪边开？",
+      "relevant": [
+        "mist-03"
+      ],
+      "irrelevant": [
+        "mist-06"
+      ],
+      "filter": {
+        "projectId": "mist"
+      }
+    },
+    {
+      "id": "q15",
+      "kind": "keyword",
+      "text": "生蚝",
+      "relevant": [
+        "mist-09"
+      ],
+      "irrelevant": [
+        "mist-07"
+      ],
+      "filter": {
+        "tags": [
+          "医疗"
+        ]
+      }
+    },
+    {
+      "id": "q16",
+      "kind": "filters",
+      "text": "父亲",
+      "relevant": [
+        "mist-04"
+      ],
+      "irrelevant": [
+        "star-02",
+        "mist-19"
+      ],
+      "filter": {
+        "projectId": "mist",
+        "tags": [
+          "亲情"
+        ],
+        "from": "2026-02-01T00:00:00Z",
+        "to": "2026-02-05T00:00:00Z"
+      }
+    },
+    {
+      "id": "q17",
+      "kind": "paraphrase",
+      "text": "船在暴风里断了桅杆后怎样保持方向等待获救？",
+      "relevant": [
+        "mist-18"
+      ],
+      "irrelevant": [
+        "mist-03"
+      ],
+      "filter": {
+        "projectId": "mist"
+      }
+    },
+    {
+      "id": "q18",
+      "kind": "relationship",
+      "text": "云城的沈砚和程雨以前是什么关系？",
+      "relevant": [
+        "cloud-05"
+      ],
+      "irrelevant": [
+        "star-04",
+        "mist-20"
+      ],
+      "filter": {
+        "projectId": "cloud"
+      }
+    },
+    {
+      "id": "q19",
+      "kind": "paraphrase",
+      "text": "城市浮在空中靠什么维持高度？",
+      "relevant": [
+        "cloud-03"
+      ],
+      "irrelevant": [
+        "star-03"
+      ],
+      "filter": {
+        "projectId": "cloud"
+      }
+    },
+    {
+      "id": "q20",
+      "kind": "keyword",
+      "text": "低频段",
+      "relevant": [
+        "cloud-04"
+      ],
+      "irrelevant": [
+        "cloud-02"
+      ],
+      "filter": {
+        "projectId": "cloud"
+      }
+    },
+    {
+      "id": "q21",
+      "kind": "filters",
+      "text": "名单",
+      "relevant": [
+        "cloud-11"
+      ],
+      "irrelevant": [
+        "cloud-20"
+      ],
+      "filter": {
+        "projectId": "cloud",
+        "tags": [
+          "人物",
+          "亲情"
+        ],
+        "from": "2026-03-10T00:00:00Z",
+        "to": "2026-03-12T00:00:00Z"
+      }
+    },
+    {
+      "id": "q22",
+      "kind": "paraphrase",
+      "text": "停电以后警报还能工作吗，备用钥匙放在哪里？",
+      "relevant": [
+        "cloud-12"
+      ],
+      "irrelevant": [
+        "cloud-14"
+      ],
+      "filter": {
+        "projectId": "cloud"
+      }
+    },
+    {
+      "id": "q23",
+      "kind": "filters",
+      "text": "空白",
+      "relevant": [
+        "draft-02"
+      ],
+      "irrelevant": [
+        "cloud-18"
+      ],
+      "filter": {
+        "uncategorizedOnly": true
+      }
+    },
+    {
+      "id": "q24",
+      "kind": "misleading",
+      "text": "黑帆号船长是不是在贩卖儿童？",
+      "relevant": [
+        "mist-06"
+      ],
+      "irrelevant": [
+        "cloud-06"
+      ],
+      "filter": {
+        "projectId": "mist"
+      }
+    },
+    {
+      "id": "q25",
+      "kind": "misleading",
+      "text": "云城中央系统是不是能够直接修改人的思想？",
+      "relevant": [
+        "cloud-08"
+      ],
+      "irrelevant": [
+        "cloud-19"
+      ],
+      "filter": {
+        "projectId": "cloud"
+      }
+    },
+    {
+      "id": "q26",
+      "kind": "no-answer",
+      "text": "雾港是否建造了火星殖民基地？",
+      "relevant": [],
+      "irrelevant": [
+        "mist-13",
+        "cloud-03"
+      ],
+      "filter": {
+        "projectId": "mist"
+      }
+    },
+    {
+      "id": "q27",
+      "kind": "no-answer",
+      "text": "程河是否已抵达旧气象站，具体哪天抵达？",
+      "relevant": [],
+      "irrelevant": [
+        "cloud-17",
+        "cloud-18"
+      ],
+      "filter": {
+        "projectId": "cloud"
+      }
+    },
+    {
+      "id": "q28",
+      "kind": "no-answer",
+      "text": "林昭在二〇三〇年六月购买的飞船叫什么名字？",
+      "relevant": [],
+      "irrelevant": [
+        "star-01",
+        "star-03"
+      ],
+      "filter": {
+        "projectId": "star",
+        "from": "2030-06-01T00:00:00Z",
+        "to": "2030-07-01T00:00:00Z"
+      }
+    }
+  ]
+}

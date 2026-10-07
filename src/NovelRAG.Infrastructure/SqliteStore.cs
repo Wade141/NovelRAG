@@ -46,16 +46,9 @@ public sealed partial class SqliteStore : IIdeaRepository, IProjectRepository, I
         Directory.CreateDirectory(Path.GetDirectoryName(DatabasePath)!);
         return Run(c =>
         {
-            var version = Convert.ToInt32(Scalar(c, "PRAGMA user_version"));
-            if (version > 1) throw new InvalidOperationException("数据库版本比此应用更新，未进行修改。");
+            Migrate(c, safetyBackup: true, ct);
             Execute(c, "PRAGMA journal_mode=WAL");
-            using var tx = c.BeginTransaction();
-            if (version == 0)
-            {
-                Execute(c, Schema);
-                Execute(c, "INSERT INTO SchemaMigrations VALUES(1, $now); PRAGMA user_version=1;", ("$now", Now()));
-            }
-            tx.Commit(); log?.Write("database.ready", data: new { Version = 1 }); return true;
+            log?.Write("database.ready", data: new { Version = CurrentVersion }); return true;
         }, ct);
     }
     private const string Schema = """
@@ -96,30 +89,36 @@ public sealed partial class SqliteStore : IIdeaRepository, IProjectRepository, I
     }
     public Task<IReadOnlyList<Project>> ProjectsAsync(CancellationToken ct = default) => Run<IReadOnlyList<Project>>(c =>
     {
-        using var cmd = Command(c, "SELECT Id,Name FROM Projects ORDER BY Name"); using var r = cmd.ExecuteReader();
-        var rows = new List<Project>(); while (r.Read()) rows.Add(new(r.GetInt64(0), r.GetString(1))); return rows;
+        return ReadProjects(c);
     }, ct);
+    private static IReadOnlyList<Project> ReadProjects(SqliteConnection c)
+    {
+        using var cmd = Command(c, "SELECT Id,Name,CreatedAt,UpdatedAt,Archived FROM Projects ORDER BY Name"); using var r = cmd.ExecuteReader();
+        var rows = new List<Project>(); while (r.Read()) rows.Add(new(r.GetInt64(0), r.GetString(1), ReadDate(r, 2), ReadDate(r, 3), r.GetBoolean(4))); return rows;
+    }
+    private static DateTimeOffset ReadDate(SqliteDataReader reader, int ordinal) => DateTimeOffset.Parse(reader.GetString(ordinal), CultureInfo.InvariantCulture);
     public Task<IReadOnlyList<Tag>> TagsAsync(CancellationToken ct = default) => Run(c => ReadTags(c), ct);
     private static IReadOnlyList<Tag> ReadTags(SqliteConnection c, long? ideaId = null)
     {
-        using var cmd = Command(c, ideaId is null ? "SELECT Id,Name FROM Tags ORDER BY Name" :
-            "SELECT t.Id,t.Name FROM Tags t JOIN IdeaTags it ON it.TagId=t.Id WHERE it.IdeaId=$id ORDER BY t.Name", ("$id", ideaId));
+        using var cmd = Command(c, ideaId is null ? "SELECT Id,Name,CreatedAt FROM Tags ORDER BY Name" :
+            "SELECT t.Id,t.Name,t.CreatedAt FROM Tags t JOIN IdeaTags it ON it.TagId=t.Id WHERE it.IdeaId=$id ORDER BY t.Name", ("$id", ideaId));
         using var r = cmd.ExecuteReader(); var rows = new List<Tag>();
-        while (r.Read()) rows.Add(new(r.GetInt64(0), r.GetString(1))); return rows;
+        while (r.Read()) rows.Add(new(r.GetInt64(0), r.GetString(1), ReadDate(r, 2))); return rows;
     }
     public Task<Project> SaveProjectAsync(string name, long? id = null, CancellationToken ct = default) =>
-        Run(c => new Project(SaveName(c, "Projects", ValidateName(name), id), name.Trim()), ct);
+        Run(c => { var saved = SaveName(c, "Projects", ValidateName(name), id); return ReadProjects(c).Single(p => p.Id == saved); }, ct);
     public Task<Tag> SaveTagAsync(string name, long? id = null, CancellationToken ct = default) =>
-        Run(c => new Tag(SaveName(c, "Tags", ValidateName(name), id), name.Trim()), ct);
+        Run(c => { var saved = SaveName(c, "Tags", ValidateName(name), id); return ReadTags(c).Single(t => t.Id == saved); }, ct);
     // table is always an internal constant, never caller input.
     private static long SaveName(SqliteConnection c, string table, string name, long? id)
     {
         if (id is not null)
         {
-            if (Execute(c, $"UPDATE {table} SET Name=$name WHERE Id=$id", ("$name", name), ("$id", id)) == 0) throw new KeyNotFoundException("记录不存在。");
+            var updates = table == "Projects" ? ",UpdatedAt=$now" : "";
+            if (Execute(c, $"UPDATE {table} SET Name=$name{updates} WHERE Id=$id", ("$name", name), ("$id", id), ("$now", Now())) == 0) throw new KeyNotFoundException("记录不存在。");
             return id.Value;
         }
-        Execute(c, $"INSERT INTO {table}(Name) VALUES($name)", ("$name", name));
+        Execute(c, table == "Projects" ? "INSERT INTO Projects(Name,CreatedAt,UpdatedAt) VALUES($name,$now,$now)" : "INSERT INTO Tags(Name,CreatedAt) VALUES($name,$now)", ("$name", name), ("$now", Now()));
         return (long)Scalar(c, "SELECT last_insert_rowid()")!;
     }
     public Task DeleteProjectAsync(long id, CancellationToken ct = default) => Run(c => Execute(c, "DELETE FROM Projects WHERE Id=$id", ("$id", id)), ct);
@@ -136,19 +135,19 @@ public sealed partial class SqliteStore : IIdeaRepository, IProjectRepository, I
         var now = Now();
         if (id is null)
         {
-            Execute(c, "INSERT INTO Ideas(ProjectId,Content,CreatedAt,UpdatedAt) VALUES($p,$c,$now,$now)",
-                ("$p", draft.ProjectId), ("$c", draft.Content), ("$now", now));
+            Execute(c, "INSERT INTO Ideas(ProjectId,Content,CreatedAt,UpdatedAt,Type) VALUES($p,$c,$now,$now,$type)",
+                ("$p", draft.ProjectId), ("$c", draft.Content), ("$now", now), ("$type", draft.Type));
             id = (long)Scalar(c, "SELECT last_insert_rowid()")!;
         }
         else
         {
-            if (Execute(c, "UPDATE Ideas SET ProjectId=$p,Content=$c,UpdatedAt=$now,Revision=Revision+1 WHERE Id=$id",
-                ("$p", draft.ProjectId), ("$c", draft.Content), ("$now", now), ("$id", id)) == 0) throw new KeyNotFoundException("灵感已被删除。");
+            if (Execute(c, "UPDATE Ideas SET ProjectId=$p,Content=$c,UpdatedAt=$now,Revision=Revision+1,Type=COALESCE($type,Type) WHERE Id=$id",
+                ("$p", draft.ProjectId), ("$c", draft.Content), ("$now", now), ("$id", id), ("$type", draft.Type)) == 0) throw new KeyNotFoundException("灵感已被删除。");
             Execute(c, "DELETE FROM IdeaTags WHERE IdeaId=$id; DELETE FROM Embeddings WHERE IdeaId=$id", ("$id", id));
         }
         foreach (var tag in tags)
         {
-            Execute(c, "INSERT OR IGNORE INTO Tags(Name) VALUES($name)", ("$name", tag));
+            Execute(c, "INSERT OR IGNORE INTO Tags(Name,CreatedAt) VALUES($name,$now)", ("$name", tag), ("$now", now));
             Execute(c, "INSERT INTO IdeaTags SELECT $id,Id FROM Tags WHERE Name=$name", ("$id", id), ("$name", tag));
         }
         tx.Commit(); return ReadIdea(c, id.Value)!;
@@ -156,12 +155,12 @@ public sealed partial class SqliteStore : IIdeaRepository, IProjectRepository, I
     public Task<Idea?> GetAsync(long id, CancellationToken ct = default) => Run(c => ReadIdea(c, id), ct);
     private static Idea? ReadIdea(SqliteConnection c, long id)
     {
-        using var cmd = Command(c, "SELECT Id,ProjectId,Content,CreatedAt,UpdatedAt,Archived,Revision FROM Ideas WHERE Id=$id", ("$id", id));
+        using var cmd = Command(c, "SELECT Id,ProjectId,Content,CreatedAt,UpdatedAt,Archived,Revision,Type FROM Ideas WHERE Id=$id", ("$id", id));
         using var r = cmd.ExecuteReader();
         if (!r.Read()) return null;
         var idea = new Idea(r.GetInt64(0), r.IsDBNull(1) ? null : r.GetInt64(1), r.GetString(2),
             DateTimeOffset.Parse(r.GetString(3), CultureInfo.InvariantCulture), DateTimeOffset.Parse(r.GetString(4), CultureInfo.InvariantCulture),
-            r.GetBoolean(5), r.GetInt64(6), []);
+            r.GetBoolean(5), r.GetInt64(6), [], r.IsDBNull(7) ? null : r.GetString(7));
         r.Close(); return idea with { Tags = ReadTags(c, id) };
     }
 }

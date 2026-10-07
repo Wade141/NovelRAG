@@ -7,7 +7,7 @@ using NovelRAG.Infrastructure;
 
 namespace NovelRAG.AI.Ollama;
 
-public sealed class AiPreparationBackend : IAiPreparationBackend, IDisposable
+public sealed class AiPreparationBackend : IAiPreparationBackend, IAiRuntimeHealthProbe, IDisposable
 {
     private readonly string dataDirectory;
     private readonly Func<AppSettings> settings;
@@ -25,6 +25,21 @@ public sealed class AiPreparationBackend : IAiPreparationBackend, IDisposable
     private string? executable;
     public event Action? RuntimeInvalidated;
     public string Root => settings().AiDirectory ?? Path.Combine(dataDirectory, "ai");
+    public int? OwnedProcessId => runtime.ProcessId;
+    public async Task<AiRuntimeHealth> CheckAsync(CancellationToken ct)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct); timeout.CancelAfter(TimeSpan.FromSeconds(2));
+        try
+        {
+            var s = settings();
+            if (s.ManagedAi) return await runtime.CheckAsync(local, timeout.Token).ConfigureAwait(false);
+            s.Validate();
+            using var response = await local.GetAsync(s.Endpoint.TrimEnd('/') + "/api/version", HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
+            return new(response.IsSuccessStatusCode, false);
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested && ex is HttpRequestException or OperationCanceledException or IOException)
+        { return new(false, false); }
+    }
     public AiPreparationBackend(string dataDirectory, Func<AppSettings> settings, Func<Func<AppSettings, AppSettings>, Task> update,
         Func<IProgress<IndexProgress>, CancellationToken, Task<IndexProgress>> index, IAppLog log, Func<string, long>? availableSpace = null)
     {

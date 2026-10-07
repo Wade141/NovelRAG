@@ -26,6 +26,8 @@ using var connected = new TcpClient(); await connected.ConnectAsync(IPAddress.Lo
 await File.WriteAllTextAsync(Path.Combine(root, "runtime-result.json"), JsonSerializer.Serialize(new { Passed = true, Endpoint = endpoint, StoppedPid = pid }));
 Console.WriteLine("Runtime ownership, occupied port and cleanup passed.");
 
+if (args.Contains("--recovery-check")) await RuntimeRecoverySmoke.RunAsync(root, exe);
+
 if (args.Contains("--change-location"))
 {
     using var services = new AppServices(Path.Combine(root, "profile")); await services.InitializeAsync();

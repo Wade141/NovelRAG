@@ -37,12 +37,14 @@ public sealed class SemanticIndexer(IIdeaRepository ideas, IEmbeddingRepository 
                 try
                 {
                     var records = new List<EmbeddingRecord>(); var chunks = TextChunker.Split(idea.Content);
-                    for (var chunk = 0; chunk < chunks.Count; chunk++)
+                    for (var offset = 0; offset < chunks.Count; offset += EmbeddingBatch.MaxSize)
                     {
-                        var vector = await provider.EmbedAsync(chunks[chunk], ct);
-                        if (vector.Length == 0 || vector.Any(v => !float.IsFinite(v)) || vector.All(v => v == 0)) throw new InvalidDataException("模型返回无效向量。");
-                        if (records.Count > 0 && vector.Length != records[0].Vector.Length) throw new InvalidDataException("模型维度发生变化。");
-                        records.Add(new(idea.Id, idea.Revision, chunk, chunks[chunk], model.Name, model.Digest, TextChunker.Version, vector));
+                        var batch = chunks.Skip(offset).Take(EmbeddingBatch.MaxSize).ToArray();
+                        var vectors = await provider.EmbedBatchAsync(batch, ct);
+                        ct.ThrowIfCancellationRequested();
+                        EmbeddingBatch.Validate(vectors, batch.Length, records.Count == 0 ? null : records[0].Vector.Length);
+                        for (var i = 0; i < batch.Length; i++)
+                            records.Add(new(idea.Id, idea.Revision, offset + i, batch[i], model.Name, model.Digest, TextChunker.Version, vectors[i]));
                     }
                     if (model != await provider.EmbeddingModelAsync(ct)) throw new InvalidOperationException("模型已变更，请重新建立索引。");
                     if (!await embeddings.SaveEmbeddingsAsync(idea.Id, idea.Revision, records, ct)) failed++;

@@ -12,14 +12,18 @@ public sealed class DesktopController(AppServices services)
     private LibraryWindow? library;
     private ChatWindow? chat;
     private SettingsWindow? settings;
-    private bool exiting;
-    private bool maintenance;
-    private bool aiChanging;
+    private volatile bool exiting, maintenance, aiChanging, recovering;
+    private readonly CancellationTokenSource supervisionStop = new();
+    private Task supervisionTask = Task.CompletedTask;
+    private AiRuntimeSupervisor? supervisor;
+    public bool AiTransitioning => exiting || maintenance || aiChanging || recovering;
+    private bool CanMonitor => !maintenance && !exiting && !aiChanging && services.Settings.AiEnabled && !services.Preparation.IsRunning && services.Preparation.Status.SearchReady;
+    public AiRuntimeSupervisor Supervisor => supervisor ??= new(services.AiBackend, () => CanMonitor, () => services.Settings.ManagedAi, DispatchRuntimeFailureAsync, log: services.Log);
     public PetWindow Pet { get; private set; } = null!;
     public IndexWorker Worker { get; } = new(services);
     public void Start()
     {
-        Pet = new(services, this, new OwlPetRenderer());
+        Pet = new(services, this, () => new OwlPetRenderer());
         if (services.Settings.PetVisible) Pet.Show();
         tray = new Forms.NotifyIcon { Icon = System.Drawing.SystemIcons.Information, Text = "NovelRAG · 灵感随手记", Visible = true };
         var menu = new Forms.ContextMenuStrip();
@@ -28,6 +32,7 @@ public sealed class DesktopController(AppServices services)
         Add("显示 / 隐藏桌宠", () => _ = TogglePetAsync()); Add("设置", OpenSettings); menu.Items.Add(new Forms.ToolStripSeparator()); Add("退出", () => _ = ExitAsync());
         tray.ContextMenuStrip = menu; tray.DoubleClick += (_, _) => OpenCapture();
         services.Ideas.Changed += Worker.Request; Worker.Start();
+        supervisionTask = Supervisor.RunAsync(supervisionStop.Token);
         if (services.Settings.AiEnabled) _ = StartAiPreparationAsync(false);
     }
     public ContextMenu CreatePetMenu()
@@ -64,7 +69,7 @@ public sealed class DesktopController(AppServices services)
     }
     public async Task TogglePetAsync()
     {
-        try { await services.UpdateSettingsAsync(s => s with { PetVisible = !s.PetVisible }); Pet.ApplySettings(); }
+        try { await services.UpdateSettingsAsync(s => s with { PetVisible = !s.PetVisible }); Pet.ApplySettings(); await Pet.RendererTask; }
         catch (Exception ex) { Ui.Error(ex); }
     }
     public void ApplySettings() { Pet.ApplySettings(); Worker.Request(); }
@@ -72,29 +77,39 @@ public sealed class DesktopController(AppServices services)
     {
         if (maintenance || exiting || aiChanging || services.Preparation.IsRunning) return;
         aiChanging = true;
+        Task? preparationTask = null;
         try
         {
+            await Supervisor.SuspendAsync(); await CancelChatAsync();
             await Worker.StopAsync();
             if (maintenance || exiting) return;
             if (!services.Settings.AiSetupChosen && !services.Settings.AiEnabled)
                 await services.UpdateSettingsAsync(s => s with { ManagedAi = true, AiSetupChosen = true });
             if (maintenance || exiting) return;
-            _ = ObservePreparationAsync(services.Preparation.StartAsync(allowDownload));
+            preparationTask = services.Preparation.StartAsync(allowDownload);
         }
         catch (Exception ex) { services.Log.Write("ai.start_failed", ex); Ui.Error(ex); }
         finally { aiChanging = false; }
+        if (preparationTask is not null) _ = ObservePreparationAsync(preparationTask);
     }
     private async Task ObservePreparationAsync(Task task)
     {
         try { await task; }
         catch (Exception ex) { services.Log.Write("ai.preparation_failed", ex); }
-        finally { if (!maintenance && !exiting) Worker.Start(); }
+        finally
+        {
+            if (!maintenance && !exiting && !aiChanging)
+            {
+                if (CanMonitor) Supervisor.Activate();
+                Worker.Start();
+            }
+        }
     }
     public async Task DisableAiAsync()
     {
         if (maintenance || exiting || aiChanging) return;
         aiChanging = true;
-        try { await Worker.StopAsync(); await services.Preparation.DisableAsync(); }
+        try { await Supervisor.SuspendAsync(); await CancelChatAsync(); await Worker.StopAsync(); await services.Preparation.DisableAsync(); }
         finally { aiChanging = false; if (!maintenance && !exiting) Worker.Start(); }
     }
     public async Task ConfigureAiAsync(bool managed, string endpoint, string embedding, string chat)
@@ -124,7 +139,7 @@ public sealed class DesktopController(AppServices services)
         aiChanging = true; maintenance = true;
         try
         {
-            chat?.Close();
+            await Supervisor.SuspendAsync(); await CancelChatAsync(close: true);
             await services.Preparation.ShutdownAsync();
             await Worker.StopAsync();
             await services.UpdateSettingsAsync(s => s with
@@ -154,23 +169,62 @@ public sealed class DesktopController(AppServices services)
             // Block tray, pet and IPC navigation before awaiting shutdown or showing confirmations.
             capture?.Close(); if (capture is not null) { maintenance = false; return false; }
             library?.Close(); if (library is not null) { maintenance = false; return false; }
-            chat?.Close(); await services.Preparation.SuspendAsync(); await Worker.StopAsync(); return true;
+            await Supervisor.SuspendAsync(); await CancelChatAsync(close: true); await services.Preparation.SuspendAsync(); await Worker.StopAsync(); return true;
         }
-        catch { maintenance = false; services.Preparation.ReleaseMaintenance(); Worker.Start(); throw; }
+        catch { maintenance = false; services.Preparation.ReleaseMaintenance(); ResumeMonitoring(); Worker.Start(); throw; }
     }
-    public void FinishRestore() { maintenance = false; services.Preparation.ReleaseMaintenance(); Worker.Start(); }
+    public void FinishRestore() { maintenance = false; services.Preparation.ReleaseMaintenance(); ResumeMonitoring(); Worker.Start(); }
+    public Task SuspendMonitoringAsync() => Supervisor.SuspendAsync();
+    public void ResumeMonitoring() { if (CanMonitor && !recovering) Supervisor.Activate(resetBudget: false); }
+    private async Task CancelChatAsync(bool close = false)
+    {
+        var window = chat; if (window is null) return;
+        await window.CancelRequestAsync(); if (close) window.Close();
+    }
+    private Task<bool> DispatchRuntimeFailureAsync(AiRuntimeFailure failure, CancellationToken ct)
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        return dispatcher is not null && !dispatcher.CheckAccess()
+            ? dispatcher.InvokeAsync(() => HandleRuntimeFailureAsync(failure, ct), System.Windows.Threading.DispatcherPriority.Normal, ct).Task.Unwrap()
+            : HandleRuntimeFailureAsync(failure, ct);
+    }
+    private async Task<bool> HandleRuntimeFailureAsync(AiRuntimeFailure failure, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested(); if (maintenance || exiting || aiChanging || !services.Settings.AiEnabled) return false;
+        recovering = true;
+        try
+        {
+            services.Preparation.RuntimeUnavailable(failure);
+            await CancelChatAsync(); await Worker.StopAsync(); ct.ThrowIfCancellationRequested();
+            if (maintenance || exiting || aiChanging || !services.Settings.AiEnabled) return false;
+            if (failure.CanRecover)
+            {
+                await services.Preparation.StartAsync(allowDownload: false, ct); ct.ThrowIfCancellationRequested();
+                if (services.Preparation.Status.SearchReady)
+                { return true; }
+                services.Preparation.RuntimeUnavailable(failure with { CanRecover = false });
+            }
+            await services.AiBackend.SaveStateAsync(services.Preparation.Status, ct); return false;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        { services.Log.Write("ai.runtime_recovery_failed", ex); services.Preparation.RuntimeUnavailable(failure with { CanRecover = false }); return false; }
+        finally { recovering = false; if (!maintenance && !exiting && !aiChanging && !ct.IsCancellationRequested) Worker.Start(); }
+    }
     public async Task ExitAsync()
     {
         if (exiting || maintenance) return; exiting = true;
+        var completed = false;
         try
         {
             capture?.Close(); if (capture is not null) return;
             library?.Close(); if (library is not null) return;
             settings?.Close(); if (settings is not null) return;
-            chat?.Close(); await services.Preparation.ShutdownAsync(); await Worker.DisposeAsync();
+            await Supervisor.SuspendAsync(); await supervisionStop.CancelAsync(); await supervisionTask;
+            await CancelChatAsync(close: true); await services.Preparation.ShutdownAsync(); await Worker.DisposeAsync();
             services.Ideas.Changed -= Worker.Request;
-            tray?.Dispose(); Pet.Close(); services.Log.Write("app.exiting"); System.Windows.Application.Current.Shutdown();
+            tray?.Dispose(); Pet.Close(); await Pet.RendererTask; services.Log.Write("app.exiting"); System.Windows.Application.Current.Shutdown(); completed = true;
         }
-        finally { exiting = false; }
+        finally { if (!completed) exiting = false; }
     }
 }

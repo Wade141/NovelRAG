@@ -17,6 +17,7 @@ public sealed class AppServices : IDisposable
     public SearchService Search { get; }
     public ChatService Chat { get; }
     public DataService Data { get; }
+    public IndexMaintenanceService Maintenance { get; }
     public SemanticIndexer Indexer { get; }
     public OllamaProvider Provider { get; }
     public AiPreparationService Preparation { get; }
@@ -28,11 +29,17 @@ public sealed class AppServices : IDisposable
     {
         DataDirectory = directory; Configuration = new(Path.Combine(directory, "settings.json")); Log = new(Path.Combine(directory, "logs"));
         store = new(Path.Combine(directory, "novelrag.db"), Log);
-        Ideas = new(store); Projects = new(store); Tags = new(store); Data = new(store);
+        Ideas = new(store, Log); Projects = new(store); Tags = new(store); Data = new(store, Log); Maintenance = new(store);
         http = new(new HttpClientHandler { AllowAutoRedirect = false, UseProxy = false }) { Timeout = Timeout.InfiniteTimeSpan };
         Provider = new(http, () => new(Settings.AiEnabled && Preparation!.Status.SearchReady, Settings.Endpoint, Settings.EmbeddingModel, Settings.ChatModel, Preparation!.Status.ChatReady));
-        var fts = new FtsRetriever(store); var vector = new VectorRetriever(store, store, Provider); var hybrid = new HybridRetriever(fts, vector, Log);
-        Search = new(fts, vector, hybrid); Chat = new(new RagPipeline(hybrid, Provider, Log)); Indexer = new(store, store, Provider, Log);
+        IRetriever CreateRetriever(string mode, RetrievalOptions options)
+        {
+            var fts = new FtsRetriever(store); var vector = new VectorRetriever(store, store, Provider, options);
+            return mode == "semantic" ? vector : mode == "hybrid" ? new HybridRetriever(fts, vector, Log, options, store) : fts;
+        }
+        Search = new(mode => CreateRetriever(mode, Settings.Retrieval with { }), Log);
+        Chat = new(() => { var options = Settings.Retrieval with { }; return new RagPipeline(CreateRetriever("hybrid", options), Provider, Log, options); });
+        Indexer = new(store, store, Provider, Log);
         AiBackend = new(directory, () => Settings, UpdateSettingsAsync, (progress, ct) => Indexer.RebuildAsync(progress, ct, missingOnly: true), Log);
         Preparation = new(AiBackend);
     }

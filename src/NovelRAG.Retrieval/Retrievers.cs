@@ -17,11 +17,12 @@ public static class VectorMath
         return aa == 0 || bb == 0 ? 0 : dot / Math.Sqrt(aa * bb);
     }
 }
-public sealed class VectorRetriever(IIdeaRepository ideas, IEmbeddingRepository embeddings, IEmbeddingProvider provider) : IRetriever
+public sealed class VectorRetriever(IIdeaRepository ideas, IEmbeddingRepository embeddings, IEmbeddingProvider provider, RetrievalOptions? options = null) : IRetriever
 {
     public async Task<RetrievalResponse> RetrieveAsync(RetrievalQuery query, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(query.Text)) return new([], "请输入语义检索内容。");
+        var config = options ?? new(); config.Validate();
         var model = await provider.EmbeddingModelAsync(ct);
         var vector = await provider.EmbedAsync(query.Text, ct);
         var after = await provider.EmbeddingModelAsync(ct);
@@ -34,7 +35,7 @@ public sealed class VectorRetriever(IIdeaRepository ideas, IEmbeddingRepository 
             ct.ThrowIfCancellationRequested();
             if (!candidates.TryGetValue(row.IdeaId, out var idea) || row.Revision != idea.Revision || row.Vector.Length != vector.Length || row.ChunkerVersion != TextChunker.Version) continue;
             var score = VectorMath.Cosine(row.Vector, vector);
-            if (score >= 0.25) ranked.Add(new(idea, score, row.Text));
+            if (score >= config.MinSimilarity) ranked.Add(new(idea, score, row.Text));
         }
         var indexed = records.Select(r => r.IdeaId).ToHashSet();
         var missing = candidates.Keys.Count(id => !indexed.Contains(id));
@@ -43,25 +44,39 @@ public sealed class VectorRetriever(IIdeaRepository ideas, IEmbeddingRepository 
             missing > 0 ? $"{missing} 条灵感尚未建立当前模型的语义索引，可在设置中重建。" : null);
     }
 }
-public sealed class HybridRetriever(IRetriever keyword, IRetriever semantic, IAppLog? log = null) : IRetriever
+public sealed class HybridRetriever(IRetriever keyword, IRetriever semantic, IAppLog? log = null, RetrievalOptions? options = null, IProjectRepository? projects = null) : IRetriever
 {
     public async Task<RetrievalResponse> RetrieveAsync(RetrievalQuery query, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        var requested = query with { Limit = Math.Min(100_000, Math.Max(60, query.Limit + query.Offset)), Offset = 0 };
+        var config = options ?? new(); var weights = config.NormalizedWeights();
+        var offset = Math.Max(0, query.Offset); var limit = Math.Clamp(query.Limit, 1, 100_000);
+        var requested = query with { Limit = (int)Math.Min(100_000L, Math.Max(60L, (long)limit + offset)), Offset = 0 };
         var lexical = await keyword.RetrieveAsync(requested, ct);
         RetrievalResponse vector;
         try { vector = await semantic.RetrieveAsync(requested, ct); }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-        catch (Exception ex) { log?.Write("retrieval.semantic_unavailable", ex); return new(lexical.Results.Skip(query.Offset).Take(query.Limit).ToArray(), "语义检索暂不可用，已显示关键词结果。"); }
+        catch (Exception ex) { log?.Write("retrieval.semantic_unavailable", ex); return new(lexical.Results.Skip(offset).Take(limit).ToArray(), "语义检索暂不可用，已显示关键词结果。"); }
         var scores = new Dictionary<long, (SearchResult Result, double Score)>();
-        foreach (var list in new[] { lexical.Results, vector.Results })
+        foreach (var (list, weight) in new[] { (lexical.Results, weights.Fts), (vector.Results, weights.Vector) })
+        {
+            var seen = new HashSet<long>();
             for (var i = 0; i < list.Count; i++)
             {
-                var item = list[i]; var score = 1d / (60 + i + 1);
+                var item = list[i]; if (!seen.Add(item.Idea.Id)) continue;
+                var score = weight * ((config.RrfK + 1) / (config.RrfK + i + 1));
                 scores[item.Idea.Id] = scores.TryGetValue(item.Idea.Id, out var old) ? (item, old.Score + score) : (item, score);
             }
+        }
+        var names = projects is not null && weights.Metadata > 0 && scores.Count > 0
+            ? (await projects.ProjectsAsync(ct)).ToDictionary(p => p.Id, p => p.Name) : new Dictionary<long, string>();
+        foreach (var id in scores.Keys.ToArray())
+        {
+            var entry = scores[id]; var idea = entry.Result.Idea;
+            var project = idea.ProjectId is { } p && names.TryGetValue(p, out var name) ? name : null;
+            scores[id] = (entry.Result, entry.Score + weights.Metadata * MetadataScorer.Score(query.Text, idea.Tags.Select(t => t.Name).ToArray(), project));
+        }
         return new(scores.Values.OrderByDescending(v => v.Score).ThenBy(v => v.Result.Idea.Id)
-            .Skip(Math.Max(0, query.Offset)).Take(Math.Clamp(query.Limit, 1, 100_000)).Select(v => v.Result with { Score = v.Score }).ToArray(), vector.Warning);
+            .Skip(offset).Take(limit).Select(v => v.Result with { Score = v.Score }).ToArray(), vector.Warning);
     }
 }
