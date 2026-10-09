@@ -2,9 +2,9 @@
 
 ## Scheduled V1 completion work
 
-These items are scheduled, not implemented. Follow [the batch plan](docs/superpowers/plans/2026-10-07-v1-remaining-work.md) for current status and acceptance evidence:
+These acceptance gates remain open. Follow [the batch plan](docs/superpowers/plans/2026-10-07-v1-remaining-work.md) and [acceptance record](docs/V1_ACCEPTANCE.md) for measured results and pending environments:
 
-- Batch 7: physical monitor/DPI, performance, clean-system and release acceptance.
+- Batch 7: physical monitor/DPI and accessibility, clean Windows 10/11, CPU-only and 8GB/16GB machines, remote CI and release acceptance. Local capacity measurements and candidate packaging do not close these gates.
 
 Global hotkeys and structured query parsing are optional batches, not mandatory V1 gates.
 
@@ -13,7 +13,7 @@ Global hotkeys and structured query parsing are optional batches, not mandatory 
 - ONNX embedding provider with tokenizer-aware chunking and query/document task prefixes.
 - A direct LLamaSharp/llama.cpp provider; managed Ollama component installation already exists.
 - Optional Python worker over a versioned named-pipe protocol.
-- Incremental/approximate vector indexing and measured large-library benchmarks.
+- Incremental/approximate vector indexing, long/multi-chunk data and capacity beyond the measured 1,000/10,000 synthetic short-note libraries.
 - Optional reranking beyond the planned deterministic hybrid scoring.
 - WinUI presentation adapter if Windows App SDK becomes a firm requirement.
 - Application-wide XAML/MVVM, EF Core or an IoC container only if a separately scoped change justifies them.

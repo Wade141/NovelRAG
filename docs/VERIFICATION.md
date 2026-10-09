@@ -1,5 +1,116 @@
 # Verification record
 
+## Public GitHub repository — 2026-10-09
+
+The user explicitly requested a public repository named NovelRAG and upload of the current project. Created `https://github.com/Wade141/NovelRAG` with public visibility and default branch `main`. The connector token could not create repositories (HTTP 403); creation succeeded through the existing Windows Git Credential Manager account. Credentials were not written to repository files or logs.
+
+The upload includes the existing source history and all 23 previously reviewed changed/new files, with repository links updated in README and V1_SCOPE. The same application/test snapshot passed local `scripts/build.ps1 -CI` (134/134 tests, exit 0) during the preceding readiness check; subsequent edits are documentation only. No root project license was selected on the user's behalf, and no binaries, models or user profiles are included. Remote Actions must be checked after the push; this record does not assert remote CI success or release acceptance. Evidence remains under `artifacts/github-readiness-20261009/` and upload results under `artifacts/github-upload-20261009/`.
+
+## GitHub source readiness check — 2026-10-09
+
+Reviewed the current source snapshot and both reachable commits without publishing or changing application behavior. The snapshot contains 133 candidate files (848,854 bytes before this documentation entry); the largest historical blob is 77,436 bytes. No database, model weights, generated binaries or common credential-pattern matches were found in the checked source/history. This was a filename and common-pattern inspection, not an exhaustive dedicated secret scan. All 10 projects have tracked dependency locks; local file links in README, V1_SCOPE, V1_ACCEPTANCE and PERFORMANCE resolve.
+
+- `powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -CI`: sandbox run exited 1 after testhost failed to connect within 90 seconds; no completed tests. Same command outside the sandbox exited 0: 134/134 tests, 0 failed/skipped, locked restore and Release desktop build completed, format verification exited 0. The build retained 6 NU1900 warnings (NuGet vulnerability metadata unavailable); format retained a workspace-load warning. Dependency vulnerability status remains unverified.
+- Evidence: `artifacts/github-readiness-20261009/{repository-check.json,ci.log,ci-retry.log,tests.trx}`. Initial working tree: 15 modified and 8 untracked files; no remote configured. Current work must be committed to include it in a push. No root project LICENSE exists; public open-source licensing remains a user decision. Existing ignores cover tools, artifacts, build outputs and SQLite files, but not `.env` or private-key files.
+- Source hosting is feasible; remote Actions and release acceptance remain unverified. No desktop/model smoke, physical monitor or clean-OS checks were rerun. No commit, remote configuration, push, signing or release was performed; all batch states remain unchanged.
+
+## Public README introduction — 2026-10-09
+
+Documentation-only update requested for GitHub visitors: added a plain-language project description, intended audience, practical uses, a fictional writing example, a short RAG explanation, navigation and current platform/AI/release limits. Checked claims against PRODUCT.md, V1_SCOPE.md, the active plan and capture/search/RAG/export implementation. Existing usage and developer instructions and unrelated working-tree edits were preserved.
+
+- README structure check (PowerShell): exit 0; 22 local links/anchors resolved and fenced code blocks balanced. Evidence: `artifacts/readme-intro-structure-20261009.log`.
+- `git diff --check`: exit 0.
+- `powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -CI`: initial sandbox run exited 1 because testhost did not connect within 90 seconds; no completed tests in that run. Log: `artifacts/readme-intro-ci-20261009.log`.
+- Same command retried outside the sandbox: exit 0; locked restore, 134/134 tests (0 failed, 0 skipped), Release desktop build and format verification completed. Build reported 0 errors and 6 NU1900 warnings because NuGet vulnerability metadata could not be fetched; format also reported a workspace-load warning. Evidence: `artifacts/readme-intro-ci-retry-20261009.log`, `artifacts/test-results/tests.trx`.
+
+No application behavior, dependencies or release scope changed. Real-model, desktop smoke, physical multi-monitor, clean-OS and remote-CI checks were not rerun; existing acceptance gaps remain open. No publishing, commit or push was performed.
+
+## F-drive backup and generated-artifact cleanup — 2026-10-08
+
+User-authorized backup completed at `F:\NovelRAG-backup-20261008-181828` before deletion. The initial backup contained 1,748 files / 5,540,875,591 bytes: the latest self-contained program and ZIP, all 133 current source files including uncommitted work, a verified all-ref Git bundle, a read-only SQLite online snapshot (including committed WAL data), profile settings/safety backup, current managed runtime/models, and retained verification evidence. Every copied file was SHA256 checked; 508 program files matched the ZIP, the ZIP matched its release checksum, SQLite integrity and foreign-key checks passed, and pinned runtime/model hashes matched the component catalog. Ollama identity keys and home credentials were excluded. Original profile and active AI files were not changed.
+
+Commands run from the repository root (scripts retained under the ignored audit directory):
+
+- `python -u artifacts/maintenance-backup-20261008/backup.py`: exit 0.
+- `powershell -NoProfile -ExecutionPolicy Bypass -File artifacts/maintenance-backup-20261008/cleanup.ps1`: exit 0; rechecked all 1,748 backup hashes before cleanup.
+
+Deleted 44 explicitly allowed targets totaling 30,721,277,633 logical bytes (28.61 GiB): four obsolete release sets, preflight publish output, eight synthetic-test AI component subtrees, three old clean/failure workspace copies, and project bin/obj directories. Checked absolute-path containment, reparse points and process usage first. D-drive reported free space rose from 10,204,479,488 to 40,938,401,792 bytes; concurrent system activity can affect free-space readings. Current release `NovelRAG-win-x64-project-create-20261008-01`, `.tools`, original profile, active E-drive AI components, and `artifacts/backups` remain. Reports inside removed clean test copies are archived in F-drive `evidence/`; removed test runtimes must be restaged before repeating their old commands.
+
+Evidence: `artifacts/maintenance-backup-20261008/backup-summary.json`, `cleanup-plan.json`, `cleanup-result.json`; backup checksum inventory and restore instructions are `backup-manifest.json` and `RESTORE.txt` on F:. These two maintenance documentation updates are synchronized into the final source backup; the unchanged program retains its original release manifest. No application code changed and no build/unit/UI/model test was rerun (0 tests in this maintenance task). This does not change physical-device, clean-OS, target-hardware or remote-CI acceptance status.
+
+## Capture project creation and project-scoped questions — 2026-10-08
+
+User-requested addition after batch 7. CaptureWindow now places “新建” beneath its project selector, prompts for a name, creates through ProjectService and selects the new project without reloading the editor or clearing content/tags. Cancel leaves the draft and original selection unchanged. A shared busy guard prevents save/close while creation is running; controls recover in finally. LastProjectId is still updated only after saving the idea. The shared library editor retains its existing project-management UI. Capture height increases from 550 to 600 to accommodate the button.
+
+Project-filtered questions were already implemented: ChatWindow passes ProjectId or UncategorizedOnly to keyword, semantic, hybrid and RAG queries. No retrieval behavior was changed. A new three-case regression uses two projects and uncategorized notes with deliberately identical embedding similarity to verify that every retriever, actual RAG context and returned source stay inside the chosen project. All-project search sees all three; an empty project does not invoke the model. These are deterministic model/provider replacements, not another real-model benchmark. Already-open chat dropdowns refresh on reopening; live synchronization was not added.
+
+Verification:
+
+- New real-window smoke first failed because the button was absent: `artifacts/capture-project-red/failure.txt`, command **exit 1**. After implementation, `artifacts/capture-project-green/project-result.json` passed **8 checks**, command **exit 0**; `capture-project.png` visually inspected for the button location and layout.
+- `powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -CI`: **exit 0**, **134/134 tests**, zero failures/skips, Release **0 warnings / 0 errors**, locked restore and format verification passed. Evidence: `artifacts/capture-project-ci.log`, `artifacts/test-results/tests.trx`.
+- Existing DesktopSmoke in `artifacts/capture-project-ui-final`: **exit 0**, **37 desktop + 12 pet lifecycle + 8 migration checks**, preserving earlier behavior.
+- Focused independent review: no Critical/Important issues. Non-blocking coverage limit: creation failure and close/save attempts during the asynchronous creation are inspected but not separately injected by smoke. Existing physical, keyboard-focus, clean-OS and real-model quality limits remain unchanged. No user data or running user service was modified; dependencies and schema unchanged.
+
+Commands (fresh output directories required; use `.tools/dotnet/dotnet.exe`, `DOTNET_CLI_HOME=.tools/home`, `NUGET_PACKAGES=.tools/packages`):
+
+```powershell
+dotnet run --project tests/NovelRAG.DesktopSmoke -c Release --no-restore -p:UseSharedCompilation=false -- artifacts/capture-project-green --project-check
+dotnet run --project tests/NovelRAG.DesktopSmoke -c Release --no-build --no-restore -- artifacts/capture-project-ui-final
+powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -CI -Publish -PublishDirectory artifacts/NovelRAG-win-x64-project-create-20261008-01
+```
+
+Local updated-package build evidence is `artifacts/capture-project-publish.log`; the adjacent `.release.json` supplies ZIP SHA256 and unsigned/unpublished status. Earlier batch-7 packages are preserved as historical snapshots and do not contain this button.
+
+## Batch 7: acceptance, capacity and local candidate — 2026-10-08
+
+Status: **功能完成，发布验收未完成**. Only local, synthetic-data checks were executed. Physical monitor/DPI, real keyboard/accessibility, clean Windows 10/11, CPU-only and 8GB/16GB machines remain open in [V1_ACCEPTANCE.md](V1_ACCEPTANCE.md). Remote Actions, signing and external distribution are not claimed. Hardware and measurement definitions are in [PERFORMANCE.md](PERFORMANCE.md); raw evidence is ignored under `artifacts/`.
+
+Changes: new test-only capacity, desktop timing, real-model UI end-to-end and independent self-contained startup modes; three delayed-renderer lifecycle probes; collision-safe unique publishing with a source manifest and ZIP SHA256. No dependencies, database schema or runtime/model versions changed. A measured FTS bottleneck was fixed by materializing the hit/rank set once before joining Ideas; literal matching, ranking, filters and paging remain unchanged.
+
+Completed deterministic and UI evidence:
+
+- `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1 -CI`: **exit 0**, **131/131 tests**, zero failures/skips, locked restore, Release **0 warnings / 0 errors**, format verification passed. `artifacts/batch7-ci-final.log`, `artifacts/test-results/tests.trx`.
+- DesktopSmoke after the SQL fix: **exit 0**, **37 desktop + 12 pet lifecycle + 8 migration checks**. `artifacts/batch7-ui-final/result.json`, `pet-lifecycle-result.json`, `migration/result.json`; capture screenshot visually inspected. The new probes cover delayed success after cancellation, hide/show while loading, and close while loading.
+- Independent self-contained startup after the SQL fix: **exit 0**, two profiles (new and frozen v1), **7 checks each**, at `artifacts/batch7-package-03/{new-profile,v1-profile}/published-result.json`. Uses invalid DOTNET_ROOT, restricted PATH and verifies loaded coreclr.dll is inside the package. Second instance forwards, closing capture preserves the host, pet-menu exit is graceful, schema is v2 and v1 gets a safety backup. This developer-machine test does not establish clean-OS compatibility.
+- Publishing preflight rejects existing directories, ZIPs or sidecars and paths outside artifacts before building. Collision/outside-root commands returned expected **exit 1**; sidecar content was preserved. Evidence: `batch7-publish-collision.log`, `batch7-publish-path.log`, `batch7-publish-sidecar-collision.log`.
+
+Performance investigation and failures retained:
+
+- Initial `batch7-model-01` completed both indexes but exposed **10,000-note FTS P95 26,585.6 ms**. It was deliberately stopped during hybrid measurements after verifying the test process identity; this run is **incomplete**, not a passing benchmark.
+- Read-only SQL diagnostics show the old flattened LEFT JOIN repeatedly scanning FTS; the materialized hit set uses a rowid lookup. The 1,000-note comparison was **544.6 → 1.8 ms**, the 10,000-note comparison **38,229.9 → 29.0 ms**, with identical 30 returned IDs, ranks and ordering in each pair. These are single diagnostic samples, not percentile claims. Evidence: `artifacts/batch7-fts-diagnostic.json`, `batch7-fts-diagnostic-10000.json`; complete post-fix capacity and fixture runs are reported separately.
+- First package smoke `batch7-package-01` timed out because a lone synthetic WM_RBUTTONUP did not trigger WPF pointer hit-testing. The harness now verifies the pointer target belongs to its own pet HWND, invokes its exit menu and restores the pointer; `batch7-package-02` and post-fix `batch7-package-03` exited 0.
+- Initial E2E `batch7-e2e-01` clicked the disabled editor during source loading, so no edit was saved; its synthetic backup correctly contained the original record. The harness now waits for enabled controls, the persisted-save status and repository content before backing up. `batch7-e2e-02` then completed with exit 0. No restore implementation change was needed.
+- Desktop timing `batch7-desktop-performance-01` exited 0 with 5 new processes and 30 interactions per capacity, but observed immediate keyboard focus only 29/30 times at each size. An additional strict-focus experiment `batch7-desktop-performance-02` failed a 10,000-note startup probe (exit 1), so it is not combined with the completed enabled-control timing measurements. Physical keyboard/foreground activation remains open; no assertion that all focus checks passed.
+- Independent review found two Important harness issues: second-instance timeout lacked process cleanup, and the UI answer check could accept a fallback excerpt. Both were fixed: owned-process finally cleanup, plus successful UI status and exact expected source ID. No Critical finding. The reviewer did not judge pending performance/final docs or unavailable hardware; final evidence is checked by the implementer. The later FTS optimization is supported by the diagnostic comparison, full regression and real-model rerun.
+
+Reproduction (run from repository root; replace output paths with fresh ones on subsequent runs):
+
+```powershell
+$env:DOTNET_CLI_HOME = 'D:\NovelRAG\.tools\home'
+$env:NUGET_PACKAGES = 'D:\NovelRAG\.tools\packages'
+$taskDotnet = 'D:\NovelRAG\.tools\dotnet\dotnet.exe'
+& $taskDotnet run --project tests/NovelRAG.DesktopSmoke -c Release --no-restore -p:UseSharedCompilation=false -- artifacts/batch7-ui-final
+& $taskDotnet run --project tests/NovelRAG.ModelSmoke -c Release --no-restore -p:UseSharedCompilation=false -- artifacts/batch7-model-02 --managed-runtime D:\NovelRAG\.tools\ollama\ollama.exe --runtime-root D:\NovelRAG\artifacts\batch7-model-01\runtime --capacity-benchmark --fixture tests/fixtures/demo_writer.json --queries tests/fixtures/retrieval_queries.json
+& $taskDotnet run --project tests/NovelRAG.DesktopSmoke -c Release --no-build --no-restore -- artifacts/batch7-desktop-performance-01 --performance D:\NovelRAG\artifacts\batch7-model-01
+& $taskDotnet run --project tests/NovelRAG.DesktopSmoke -c Release --no-build --no-restore -- artifacts/batch7-e2e-02 --end-to-end D:\NovelRAG\.tools\ollama\ollama.exe D:\NovelRAG\artifacts\batch7-model-01\runtime
+& $taskDotnet run --project tests/NovelRAG.AiSmoke -c Release --no-restore -p:UseSharedCompilation=false -- artifacts/batch7-ai-01 D:\NovelRAG\.tools\ollama\ollama.exe --recovery-check --crash-check
+& $taskDotnet run --project tests/NovelRAG.DesktopSmoke -c Release --no-build --no-restore -- artifacts/batch7-package-03 --release-check D:\NovelRAG\artifacts\batch7-publish-validation\NovelRAG.exe
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1 -CI -Publish -PublishDirectory artifacts/NovelRAG-win-x64-v1-candidate-20261008-02
+```
+
+Before ModelSmoke, stage existing model files under the selected **test-only** runtime root's `models/`; `--runtime-root` defaults to `<output>/runtime` and must not point at a user-managed runtime. After ModelSmoke exits, EndToEndSmoke can reuse these test assets with a fresh profile. Desktop performance backs up the completed synthetic databases into independent profiles; the source index from the incomplete first timing run is complete, but its unfinished timing report is not reused. Before AiSmoke, copy the pinned runtime to `<output>/profile/ai/runtime/0.34.4/` and existing models to `<output>/profile/ai/models/`. All preparation/recovery checks forbid downloads; run model-serving checks sequentially to avoid port/resource contention. No user service was taken over.
+
+Completed fresh model and desktop timing results:
+
+- ModelSmoke `batch7-model-02`: **exit 0**, 1,000/1,000 and 10,000/10,000 indexed with zero failures, 30 queries per mode/size. Post-fix FTS P95 **6.8 / 45.1 ms**, vector **107.0 / 726.8 ms**, hybrid **108.2 / 826.9 ms**. Index throughput **23.65 / 15.24 notes/s**. Raw samples, model hashes, GPU residency and client-only memory are in each `capacity-*/performance.json`; full methods and limitations in PERFORMANCE.md.
+- The same command reran the 63-note/28-query fixture: **Passed=true**, Recall@5 **1.00**, MRR@10 **0.953333**, zero filter/source-ownership errors. No-answer false recall remains **2/3**. q26/q27 repeat instruction text, q04/q06/q15/q22 include explicitly irrelevant lower-ranked results; these are preserved quality defects. `artifacts/batch7-model-02/evaluation.json` includes every answer/ranking and the six review cases.
+- Desktop performance `batch7-desktop-performance-01`: **exit 0**, each size 5 startup and 30 interaction samples; entry-enabled P95 **139.5 / 114.9 ms**, save-feedback P95 **94.1 / 123.7 ms**. This is not physical typing, focus acceptance or OS-cache-cold startup.
+- Real UI E2E `batch7-e2e-02`: **exit 0**, **13 checks** in `e2e-result.json`: capture with project/tags, AI-off/missing-model/incomplete-index behavior, local preparation with downloads forbidden, filtered hybrid search and successful model answer with exact source, source navigation, persisted edit, backup/restore and management/host lifetime.
+
+AiSmoke `batch7-ai-01`: **exit 0**, **11 recovery checks** plus runtime ownership/occupied-port cleanup and abrupt-host-crash cleanup. Evidence: `recovery-result.json`, `runtime-result.json`, `crash-result.json` and `artifacts/batch7-ai-01.log`. Existing components prepare with downloading forbidden, one owned-engine crash recovers once, a second crash stops retries, manual preparation rearms the budget, disabling cancels recovery, keyword/recording remain usable, and the separately owned external service survives application shutdown. No machine-wide network disconnection was simulated.
+
+The final local candidate command above produces a new directory/ZIP; `.release.json` is the authoritative ZIP SHA256 and unsigned/unpublished record. `source-manifest.json` records base Git revision `0bcbbbf27e89b1436e077ab28f9521e47661ce1e` plus the dirty working-tree file hashes, not a nonexistent commit. The package is local only; preflight published binaries were tested in `batch7-package-03`, and final-package verification evidence belongs under `artifacts/batch7-package-final`. The final build log is `artifacts/batch7-candidate-final.log`; verify its exit status and sidecar instead of treating the example command alone as evidence.
+
 ## Git backup checkpoint — 2026-10-08
 
 User-requested local Git snapshot of the existing work; no application behavior changed for this backup. `powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -CI` completed with **exit 0** after retrying outside the sandbox: locked restore passed, **131/131 tests passed**, zero failed/skipped, desktop Release build **0 warnings / 0 errors**, and format verification passed. The initial sandbox run exited 1 because the test runner could not connect to testhost within 90 seconds; it produced no completed test result. Evidence for the successful retry: `artifacts/test-results/tests.trx`.

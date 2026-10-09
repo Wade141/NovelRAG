@@ -22,6 +22,12 @@ public static class Program
             using var services = new AppServices(root);
             try
             {
+                if (args.Contains("--project-check")) { await CaptureProjectSmoke.RunAsync(root); app.Shutdown(); return; }
+                if (args.Contains("--startup-probe")) { await DesktopPerformance.StartupProbeAsync(root); app.Shutdown(); return; }
+                if (args.Contains("--performance")) { await DesktopPerformance.RunAsync(root, args[2]); app.Shutdown(); return; }
+                if (args.Contains("--performance-size")) { await DesktopPerformance.RunSizeAsync(root, args[2], int.Parse(args[3])); return; }
+                if (args.Contains("--release-check")) { await PublishedSmoke.RunAsync(root, args[2]); app.Shutdown(); return; }
+                if (args.Contains("--end-to-end")) { await EndToEndSmoke.RunAsync(root, args[2], args[3]); return; }
                 await MigrationSmoke.RunAsync(root);
                 await PetLifecycleSmoke.RunAsync(root);
                 await services.InitializeAsync(); var controller = new DesktopController(services); controller.Start();

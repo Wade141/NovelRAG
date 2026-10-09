@@ -2,6 +2,7 @@
   <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
   <ItemGroup>
     <Compile Include="../FixtureSupport.cs" Link="FixtureSupport.cs" />
+    <Compile Include="../PerformanceMetrics.cs" Link="PerformanceMetrics.cs" />
     <None Include="../fixtures/*.json" Link="fixtures/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="../../src/NovelRAG.Infrastructure/NovelRAG.Infrastructure.csproj" />
     <ProjectReference Include="../../src/NovelRAG.Retrieval/NovelRAG.Retrieval.csproj" />

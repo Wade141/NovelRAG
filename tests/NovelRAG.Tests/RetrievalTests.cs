@@ -109,6 +109,41 @@ public sealed class RetrievalTests
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task Project_choice_isolates_every_retriever_and_model_context(int choice)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "NovelRAG-project-retrieval-" + Guid.NewGuid());
+        try
+        {
+            var db = new SqliteStore(Path.Combine(root, "test.db")); await db.InitializeAsync();
+            var a = await db.SaveProjectAsync("作品甲"); var b = await db.SaveProjectAsync("作品乙");
+            var notes = new[]
+            {
+                await db.SaveAsync(new("childhood 甲作品专属铜铃", a.Id, [])),
+                await db.SaveAsync(new("childhood 乙作品专属地图", b.Id, [])),
+                await db.SaveAsync(new("childhood 未分类专属灯塔", null, []))
+            };
+            var provider = new FakeEmbedding(); await new SemanticIndexer(db, db, provider).RebuildAsync();
+            var keyword = new FtsRetriever(db); var semantic = new VectorRetriever(db, db, provider);
+            var hybrid = new HybridRetriever(keyword, semantic, projects: db);
+            var allowed = notes[choice]; var query = new RetrievalQuery("childhood", allowed.ProjectId, UncategorizedOnly: allowed.ProjectId is null);
+            foreach (var retriever in new IRetriever[] { keyword, semantic, hybrid })
+                Assert.Equal(allowed.Id, Assert.Single((await retriever.RetrieveAsync(query)).Results).Idea.Id);
+            var model = new FakeLlm(new(allowed.Content, [allowed.Id]));
+            var answer = await new RagPipeline(hybrid, model).AskAsync(query);
+            Assert.False(answer.IsFallback);
+            Assert.Equal(allowed.Id, Assert.Single(answer.Sources).Idea.Id);
+            Assert.Equal(allowed.Id, Assert.Single(model.Context).Idea.Id);
+            Assert.Equal(3, (await hybrid.RetrieveAsync(query with { ProjectId = null, UncategorizedOnly = false })).Results.Count);
+            var empty = await db.SaveProjectAsync("没有灵感的作品"); model.Calls = 0;
+            Assert.True((await new RagPipeline(hybrid, model).AskAsync(query with { ProjectId = empty.Id, UncategorizedOnly = false })).IsFallback);
+            Assert.Equal(0, model.Calls);
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
     private sealed class FixedRetriever(IReadOnlyList<SearchResult> results, Exception? failure = null) : IRetriever
     {
         public Task<RetrievalResponse> RetrieveAsync(RetrievalQuery q, CancellationToken ct = default)

@@ -9,13 +9,15 @@ public sealed class IdeaEditor : Grid
     private string? type;
     public bool Ready { get; private set; }
     public bool Dirty => Ready && Signature() != baseline;
-    public IdeaEditor()
+    public IdeaEditor(Func<Task>? createProject = null)
     {
         IsEnabled = false;
         RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
         RowDefinitions.Add(new() { Height = GridLength.Auto }); RowDefinitions.Add(new() { Height = GridLength.Auto });
         ContentInput.MinHeight = 130; ContentInput.VerticalContentAlignment = VerticalAlignment.Top; Children.Add(ContentInput);
-        var projectPanel = new StackPanel(); projectPanel.Children.Add(Ui.Text("作品")); projectPanel.Children.Add(ProjectInput); Grid.SetRow(projectPanel, 1); Children.Add(projectPanel);
+        var projectPanel = new StackPanel(); projectPanel.Children.Add(Ui.Text("作品")); projectPanel.Children.Add(ProjectInput);
+        if (createProject is not null) projectPanel.Children.Add(Ui.Row(Ui.Button("新建", createProject)));
+        Grid.SetRow(projectPanel, 1); Children.Add(projectPanel);
         var tagsPanel = new StackPanel(); tagsPanel.Children.Add(Ui.Text("标签 · 以逗号分隔，可自由创建", 12, Ui.Muted)); tagsPanel.Children.Add(TagsInput); Grid.SetRow(tagsPanel, 2); Children.Add(tagsPanel);
     }
     private string Signature() => ContentInput.Text + "\u001f" + ProjectInput.SelectedValue + "\u001f" + TagsInput.Text;

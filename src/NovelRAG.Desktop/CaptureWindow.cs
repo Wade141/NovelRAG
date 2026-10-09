@@ -5,13 +5,13 @@ namespace NovelRAG.Desktop;
 public sealed class CaptureWindow : Window
 {
     private readonly AppServices services;
-    private readonly IdeaEditor editor = new();
+    private readonly IdeaEditor editor;
     private readonly TextBlock status = Ui.Text("Ctrl+Enter 保存 · Esc 取消", 12, Ui.Muted);
     private readonly Button save;
     private bool saving;
     public CaptureWindow(AppServices services)
     {
-        this.services = services; Ui.Configure(this, "记录灵感", 520, 550); Topmost = true;
+        this.services = services; editor = new(CreateProjectAsync); Ui.Configure(this, "记录灵感", 520, 600); Topmost = true;
         var panel = new DockPanel { Margin = new Thickness(24) };
         var header = new StackPanel(); header.Children.Add(Ui.Text("留住这一刻的灵感", 24)); header.Children.Add(Ui.Text("一段对白、一个转折，或尚未成形的念头。", 12, Ui.Muted)); DockPanel.SetDock(header, Dock.Top); panel.Children.Add(header);
         save = Ui.Button("保存灵感", SaveAsync, true); save.IsEnabled = false;
@@ -20,6 +20,21 @@ public sealed class CaptureWindow : Window
         Loaded += async (_, _) => { try { await editor.LoadAsync(services, preferredProject: services.Settings.LastProjectId); editor.ContentInput.Focus(); save.IsEnabled = true; } catch (Exception ex) { Ui.Error(ex); } };
         PreviewKeyDown += async (_, e) => { if (e.Key == Key.Escape) { Close(); e.Handled = true; } else if (e.Key == Key.Enter && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) { e.Handled = true; try { await SaveAsync(); } catch (Exception ex) { Ui.Error(ex); } } };
         Closing += (_, e) => { if (saving || editor.Dirty && !Ui.Confirm("放弃尚未保存的灵感？")) e.Cancel = true; };
+    }
+    private async Task CreateProjectAsync()
+    {
+        if (saving || !editor.Ready) return;
+        saving = true; editor.IsEnabled = false; save.IsEnabled = false;
+        try
+        {
+            var name = Ui.Prompt(this, "新建作品"); if (name is null) return;
+            var project = await services.Projects.SaveAsync(name);
+            var projects = await services.Projects.ListAsync();
+            // Refresh only the selector: reloading the editor would discard the pending draft.
+            editor.ProjectInput.ItemsSource = new[] { new Project(0, "未分类") }.Concat(projects).ToArray();
+            editor.ProjectInput.SelectedValue = project.Id;
+        }
+        finally { saving = false; editor.IsEnabled = true; save.IsEnabled = true; editor.ContentInput.Focus(); }
     }
     private async Task SaveAsync()
     {

@@ -17,7 +17,8 @@ string? Option(string flag)
 var endpoint = args.Length > 1 && !args[1].StartsWith("--", StringComparison.Ordinal) ? args[1] : "http://127.0.0.1:11434";
 using var runtime = new ManagedOllamaRuntime();
 if (Option("--managed-runtime") is { } executable)
-    endpoint = await runtime.StartAsync(Path.GetFullPath(executable), Path.Combine(root, "runtime"), "0.34.4", false, default);
+    endpoint = await runtime.StartAsync(Path.GetFullPath(executable), Path.GetFullPath(Option("--runtime-root") ?? Path.Combine(root, "runtime")), "0.34.4", false, default);
+if (args.Contains("--capacity-benchmark")) await CapacityBenchmark.RunAsync(root, endpoint);
 if (Option("--fixture") is { } fixture)
 {
     Environment.ExitCode = await FixtureEvaluation.RunAsync(root, endpoint, fixture, Option("--queries") ?? throw new ArgumentException("--queries is required with --fixture."));

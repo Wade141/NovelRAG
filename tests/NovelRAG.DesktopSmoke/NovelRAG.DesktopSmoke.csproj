@@ -4,5 +4,6 @@
     <UseWPF>true</UseWPF><ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../../src/NovelRAG.Desktop/NovelRAG.Desktop.csproj" /></ItemGroup>
+  <ItemGroup><Compile Include="../PerformanceMetrics.cs" Link="PerformanceMetrics.cs" /></ItemGroup>
   <ItemGroup><None Include="../NovelRAG.Tests/Fixtures/v1.sql" Link="Fixtures/v1.sql" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
 </Project>

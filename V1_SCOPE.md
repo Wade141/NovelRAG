@@ -4,11 +4,13 @@
 
 快捷键：记录窗口 Ctrl+Enter 保存，Esc 取消；取消非空草稿需要确认。提问窗口 Ctrl+Enter 提问。AI 默认关闭，在设置中点击“一键准备 AI”即可自动安装本地组件、自检并建立索引；已有外部服务可在高级设置中继续使用。
 
+记录窗口的作品选择框下方支持“新建”，创建后直接选中且保留正文／标签草稿；保存灵感后记住作品选择。搜索／提问支持指定作品、未分类与全部作品，检索结果和模型上下文使用相同作品范围；已打开的搜索窗口需重新打开以加载新作品。
+
 WPF 代替推荐 WinUI 3 的决定经用户确认；Ollama 是 V1 唯一推理运行时。模型文件与运行时不捆绑在普通发布包内。Python、云端服务与账户均不是依赖。
 
 本轮保留手写 SQLite Repository、增量版本管理、手动构造注入、`settings.json` 和 SQLite 在线恢复。界面以 C# 构建 WPF 控件为主，AI 准备页局部使用 ViewModel；这些技术选择不列为必须重写的缺口。
 
-仓库规则和 Windows CI 配置已提供；`scripts/build.ps1 -CI` 是本地等效验证入口。当前未配置 Git remote，因此不声明远端 CI 已通过。第二批日期筛选、第三批配置化评分与合成检索评测、第四批运行期 AI 有界恢复、第五批关键词索引修复／元数据迁移／隐私日志、第六批桌宠生命周期／批量嵌入接口已完成；最终实机验收仍按[分批计划](docs/superpowers/plans/2026-10-07-v1-remaining-work.md)推进。
+仓库规则和 Windows CI 配置已提供；`scripts/build.ps1 -CI` 是本地等效验证入口。源码仓库为 [Wade141/NovelRAG](https://github.com/Wade141/NovelRAG)，远端 CI 状态以实际 Actions 结果为准。第二至六批功能已完成；第七批补充本机端到端、容量与候选包验收，详见 [V1 验收记录](docs/V1_ACCEPTANCE.md) 与[分批计划](docs/superpowers/plans/2026-10-07-v1-remaining-work.md)。当前状态为**功能完成，发布验收未完成**：物理显示器、干净系统及目标低内存机器仍待验收。
 
 当前实现限制：
 

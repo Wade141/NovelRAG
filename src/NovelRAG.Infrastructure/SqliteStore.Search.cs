@@ -41,9 +41,11 @@ public sealed partial class SqliteStore
         var fts = text.EnumerateRunes().Count() >= 3 ? "IdeasTrigram" : "IdeasFts";
         var membership = text.EnumerateRunes().Count() >= 3 ? "(f.rowid IS NOT NULL OR instr(lower(i.Content),lower($text))>0)" : "instr(lower(i.Content),lower($text))>0";
         // FTS ranks literal phrases; instr covers short Chinese terms and literal punctuation.
+        // Materialize once: a flattened LEFT JOIN reruns the FTS rank scan for every idea.
         using var cmd = Command(c, $"""
+            WITH hits AS MATERIALIZED (SELECT rowid,rank FROM {fts} WHERE {fts} MATCH $term)
             SELECT i.Id, COALESCE(f.rank,0) FROM Ideas i
-            LEFT JOIN (SELECT rowid,rank FROM {fts} WHERE {fts} MATCH $term) f ON f.rowid=i.Id
+            LEFT JOIN hits f ON f.rowid=i.Id
             WHERE {where} AND {membership}
             ORDER BY COALESCE(f.rank,0),i.CreatedAt DESC,i.Id DESC LIMIT $limit OFFSET $offset
             """, args.ToArray());
